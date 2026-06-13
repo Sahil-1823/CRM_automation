@@ -1,0 +1,21 @@
+{
+  "name": "crm-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HeyReach → OpenAI sentiment → Attio CRM → Slack reminders on Vercel",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod",
+    "test": "node --test test/**/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "openai": "^4.104.0"
+  },
+  "devDependencies": {
+    "vercel": "^41.7.0"
+  }
+}
