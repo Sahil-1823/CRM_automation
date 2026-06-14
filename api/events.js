@@ -1,0 +1,51 @@
+import { jsonResponse, readJsonBody } from "../lib/http.js";
+import { listEvents, getEvent, updateEvent, isUsingKv } from "../lib/store.js";
+
+export default async function handler(req, res) {
+  try {
+    const url = new URL(req.url, "http://localhost");
+    const id = url.searchParams.get("id");
+
+    if (req.method === "GET") {
+      if (id) {
+        const event = await getEvent(id);
+        if (!event) return jsonResponse(res, 404, { error: "Not found" });
+        return jsonResponse(res, 200, { event });
+      }
+      const status = url.searchParams.get("status") || undefined;
+      const limit = Number(url.searchParams.get("limit") || 100);
+      const events = await listEvents({ status, limit });
+      return jsonResponse(res, 200, {
+        events,
+        storage: isUsingKv() ? "kv" : "file",
+      });
+    }
+
+    if (req.method === "PATCH") {
+      if (!id) return jsonResponse(res, 400, { error: "Missing ?id=" });
+      const body = await readJsonBody(req);
+      const allowed = {};
+      if (typeof body.draftReply === "string") {
+        const current = await getEvent(id);
+        if (!current) return jsonResponse(res, 404, { error: "Not found" });
+        allowed.draft = {
+          ...(current.draft || {}),
+          reply: body.draftReply,
+        };
+      }
+      if (typeof body.status === "string") allowed.status = body.status;
+      if (typeof body.note === "string") allowed.note = body.note;
+
+      const updated = await updateEvent(id, allowed);
+      return jsonResponse(res, 200, { event: updated });
+    }
+
+    return jsonResponse(res, 405, { error: "Method not allowed" });
+  } catch (error) {
+    console.error("events api error:", error);
+    return jsonResponse(res, 500, {
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+}

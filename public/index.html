@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM Automation · Reply Inbox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .scrollbar::-webkit-scrollbar { width: 8px; }
+    .scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+    .fade-in { animation: fade 0.18s ease-out; }
+    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
+  <div class="h-full flex flex-col">
+    <!-- Header -->
+    <header class="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">CR</div>
+        <div>
+          <h1 class="text-base font-semibold leading-tight">Reply Inbox</h1>
+          <p class="text-xs text-slate-500 leading-tight">HeyReach → Sentiment → Review → Send</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="storageBadge" class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">storage: …</div>
+        <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 transition">
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Sidebar list -->
+      <aside class="w-[380px] border-r border-slate-200 bg-white flex flex-col">
+        <div class="px-4 py-3 border-b border-slate-200">
+          <div class="flex items-center gap-1.5 text-xs">
+            <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-full bg-slate-900 text-white">All</button>
+            <button data-filter="pending_review" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Pending</button>
+            <button data-filter="sent" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Sent</button>
+            <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Dismissed</button>
+          </div>
+        </div>
+        <div id="list" class="flex-1 overflow-y-auto scrollbar"></div>
+      </aside>
+
+      <!-- Detail panel -->
+      <main id="detail" class="flex-1 overflow-y-auto scrollbar bg-slate-50">
+        <div class="h-full grid place-items-center text-slate-400 text-sm">
+          Select a conversation to review.
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
+
+  <script>
+    const state = { events: [], selectedId: null, filter: "all" };
+
+    const escapeHtml = (s) =>
+      String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+
+    const fmtTime = (iso) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      const diff = (Date.now() - d.getTime()) / 1000;
+      if (diff < 60) return "just now";
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString();
+    };
+
+    const sentimentBadge = (s) => {
+      const label = s?.label || "unknown";
+      const isPos = s?.isPositive;
+      const cls = isPos
+        ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+        : label === "negative/neutral"
+          ? "bg-rose-50 text-rose-700 border-rose-200"
+          : "bg-slate-100 text-slate-600 border-slate-200";
+      return `<span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border ${cls}">
+        <span class="w-1.5 h-1.5 rounded-full ${isPos ? "bg-emerald-500" : "bg-rose-500"}"></span>${escapeHtml(label)}
+      </span>`;
+    };
+
+    const statusBadge = (status) => {
+      const map = {
+        pending_review: ["bg-amber-100 text-amber-800", "Pending review"],
+        sent: ["bg-emerald-100 text-emerald-800", "Sent"],
+        dismissed: ["bg-slate-200 text-slate-700", "Dismissed"],
+      };
+      const [cls, label] = map[status] || ["bg-slate-100 text-slate-600", status];
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full ${cls}">${escapeHtml(label)}</span>`;
+    };
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.add("hidden"), 2400);
+    }
+
+    async function loadEvents() {
+      const res = await fetch("/api/events?limit=200");
+      const data = await res.json();
+      state.events = data.events || [];
+      document.getElementById("storageBadge").textContent = `storage: ${data.storage || "?"}`;
+      renderList();
+      if (state.selectedId) {
+        const still = state.events.find((e) => e.id === state.selectedId);
+        if (still) renderDetail(still);
+      }
+    }
+
+    function renderList() {
+      const list = document.getElementById("list");
+      const filtered = state.filter === "all"
+        ? state.events
+        : state.events.filter((e) => e.status === state.filter);
+
+      if (!filtered.length) {
+        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${state.filter !== "all" ? " in this view" : " yet"}.</div>`;
+        return;
+      }
+
+      list.innerHTML = filtered.map((e) => {
+        const lead = e.lead || {};
+        const preview = (lead.replyMessage || "").slice(0, 90);
+        const selected = e.id === state.selectedId;
+        return `
+          <button data-id="${e.id}" class="event-item w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${selected ? "bg-indigo-50/60 border-l-2 border-l-indigo-500" : ""}">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown lead")}</span>
+              <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(e.createdAt)}</span>
+            </div>
+            <div class="text-xs text-slate-500 truncate mb-1.5">${escapeHtml(lead.companyName || lead.jobTitle || "—")}</div>
+            <div class="text-xs text-slate-600 line-clamp-2 mb-2">${escapeHtml(preview)}${lead.replyMessage?.length > 90 ? "…" : ""}</div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              ${sentimentBadge(e.sentiment)}
+              ${statusBadge(e.status)}
+            </div>
+          </button>
+        `;
+      }).join("");
+
+      list.querySelectorAll(".event-item").forEach((el) => {
+        el.addEventListener("click", () => {
+          state.selectedId = el.dataset.id;
+          const ev = state.events.find((e) => e.id === state.selectedId);
+          renderList();
+          if (ev) renderDetail(ev);
+        });
+      });
+    }
+
+    function renderDetail(e) {
+      const lead = e.lead || {};
+      const draftReply = e.draft?.reply || "";
+      const isSent = e.status === "sent";
+      const detail = document.getElementById("detail");
+
+      detail.innerHTML = `
+        <div class="max-w-3xl mx-auto p-6 space-y-5 fade-in">
+          <!-- Lead card -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <h2 class="text-lg font-semibold">${escapeHtml(lead.fullName || "Unknown lead")}</h2>
+                  ${statusBadge(e.status)}
+                </div>
+                <div class="text-sm text-slate-500">
+                  ${escapeHtml(lead.jobTitle || "")}${lead.jobTitle && lead.companyName ? " · " : ""}${escapeHtml(lead.companyName || "")}
+                </div>
+                ${lead.linkedInUrl ? `<a href="${escapeHtml(lead.linkedInUrl)}" target="_blank" class="text-xs text-indigo-600 hover:underline mt-1 inline-block">${escapeHtml(lead.linkedInUrl)}</a>` : ""}
+              </div>
+              <div class="text-right">
+                ${sentimentBadge(e.sentiment)}
+                <div class="text-[11px] text-slate-400 mt-1">${escapeHtml(fmtTime(e.createdAt))}</div>
+              </div>
+            </div>
+            ${lead.campaignName ? `<div class="mt-3 text-xs text-slate-500">Campaign: <span class="text-slate-700">${escapeHtml(lead.campaignName)}</span></div>` : ""}
+          </div>
+
+          <!-- Conversation -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Conversation</h3>
+            ${lead.yourMessage ? `
+              <div class="mb-3">
+                <div class="text-[11px] text-slate-400 mb-1">Your previous message</div>
+                <div class="bg-slate-50 rounded-lg p-3 text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(lead.yourMessage)}</div>
+              </div>
+            ` : ""}
+            <div>
+              <div class="text-[11px] text-slate-400 mb-1">Lead's reply</div>
+              <div class="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 text-sm text-slate-800 whitespace-pre-wrap">${escapeHtml(lead.replyMessage || "")}</div>
+            </div>
+          </div>
+
+          <!-- Sentiment analysis -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Sentiment analysis</h3>
+              ${sentimentBadge(e.sentiment)}
+            </div>
+            <p class="text-sm text-slate-700">${escapeHtml(e.sentiment?.reasoning || "—")}</p>
+          </div>
+
+          <!-- Draft reply -->
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Suggested reply</h3>
+              ${e.draft?.rationale ? `<span class="text-[11px] text-slate-400 italic">${escapeHtml(e.draft.rationale)}</span>` : ""}
+            </div>
+            ${e.draft?.error ? `<div class="text-xs text-rose-600 mb-2">Draft generation failed: ${escapeHtml(e.draft.error)}</div>` : ""}
+            <textarea id="replyText" ${isSent ? "readonly" : ""}
+              class="w-full min-h-[140px] p-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isSent ? "bg-slate-50" : ""}"
+              placeholder="Write your reply…">${escapeHtml(draftReply)}</textarea>
+            <div class="flex items-center justify-between mt-3">
+              <div class="text-xs text-slate-400">
+                ${isSent && e.sentAt ? `Sent ${fmtTime(e.sentAt)}` : "Edit freely before sending."}
+              </div>
+              <div class="flex gap-2">
+                ${!isSent ? `
+                  <button id="dismissBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100">Dismiss</button>
+                  <button id="saveBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100">Save draft</button>
+                  <button id="sendBtn" class="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-medium">Send reply</button>
+                ` : `
+                  <span class="text-xs text-emerald-600 font-medium">✓ Sent</span>
+                `}
+              </div>
+            </div>
+          </div>
+
+          ${e.sendResult ? `
+            <div class="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Send result</h3>
+              <pre class="text-xs bg-slate-50 rounded-lg p-3 overflow-x-auto">${escapeHtml(JSON.stringify(e.sendResult, null, 2))}</pre>
+            </div>
+          ` : ""}
+        </div>
+      `;
+
+      if (!isSent) {
+        document.getElementById("saveBtn").addEventListener("click", () => saveDraft(e.id));
+        document.getElementById("sendBtn").addEventListener("click", () => sendReply(e.id));
+        document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
+      }
+    }
+
+    async function saveDraft(id) {
+      const reply = document.getElementById("replyText").value;
+      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftReply: reply }),
+      });
+      if (res.ok) {
+        toast("Draft saved");
+        await loadEvents();
+      } else toast("Failed to save");
+    }
+
+    async function dismissEvent(id) {
+      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      });
+      if (res.ok) {
+        toast("Dismissed");
+        await loadEvents();
+      } else toast("Failed");
+    }
+
+    async function sendReply(id) {
+      const reply = document.getElementById("replyText").value.trim();
+      if (!reply) { toast("Reply is empty"); return; }
+      const btn = document.getElementById("sendBtn");
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      try {
+        const res = await fetch(`/api/send-reply?id=${encodeURIComponent(id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reply }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast("Reply sent");
+          await loadEvents();
+        } else {
+          toast(`Failed: ${data.message || data.error || "unknown"}`);
+          btn.disabled = false;
+          btn.textContent = "Send reply";
+        }
+      } catch (err) {
+        toast(`Error: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = "Send reply";
+      }
+    }
+
+    document.querySelectorAll(".filter-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.filter = btn.dataset.filter;
+        document.querySelectorAll(".filter-btn").forEach((b) => {
+          b.className = "filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100";
+        });
+        btn.className = "filter-btn px-2.5 py-1 rounded-full bg-slate-900 text-white";
+        renderList();
+      });
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", loadEvents);
+
+    loadEvents();
+    setInterval(loadEvents, 15000);
+  </script>
+</body>
+</html>
