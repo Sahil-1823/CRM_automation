@@ -21,12 +21,6 @@
         <p class="text-xs text-slate-500">HeyReach replies · review & send</p>
       </div>
       <div class="flex items-center gap-3 shrink-0">
-        <label class="flex items-center gap-2 text-xs text-slate-600">
-          <span class="text-slate-500 whitespace-nowrap">Workspace</span>
-          <select id="workspaceFilter" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 min-w-[10rem]">
-            <option value="">All workspaces</option>
-          </select>
-        </label>
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge base</button>
         <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
@@ -174,13 +168,10 @@
       selectedId: null,
       filter: "all",
       accountFilter: "",
-      workspaceFilter: "",
       campaignFilter: "",
       projects: [],
       heyreachAccounts: [],
-      heyreachWorkspaces: [],
       heyreachCampaigns: [],
-      hasOrgKey: false,
     };
 
     const tagClass = "text-[11px] px-2 py-0.5 rounded border border-slate-200 text-slate-600 bg-white";
@@ -276,41 +267,10 @@
       return name || `LinkedIn account ${id}`;
     }
 
-    function getEventWorkspaceId(e) {
-      const id = e.workspace?.id ?? e.lead?.workspaceId;
-      if (id == null || id === "") return null;
-      return String(id);
-    }
-
-    function getEventWorkspaceName(e) {
-      const id = getEventWorkspaceId(e);
-      if (!id) return null;
-      return (
-        e.workspace?.name ||
-        e.lead?.workspaceName ||
-        state.heyreachWorkspaces.find((w) => w.id === id)?.name ||
-        null
-      );
-    }
-
-    function formatWorkspaceLabel(id, e = null) {
-      if (!id) return "Unknown workspace";
-      const name = e
-        ? getEventWorkspaceName(e)
-        : state.heyreachWorkspaces.find((w) => w.id === id)?.name;
-      return name || `Workspace ${id}`;
-    }
-
     const accountBadge = (e) => {
       const id = getEventAccountId(e);
       if (id == null) return "";
       return `<span class="${tagClass}">${escapeHtml(formatAccountLabel(id, e))}</span>`;
-    };
-
-    const workspaceBadge = (e) => {
-      const id = getEventWorkspaceId(e);
-      if (!id) return "";
-      return `<span class="${tagClass}">${escapeHtml(formatWorkspaceLabel(id, e))}</span>`;
     };
 
     function getEventCampaignKey(e) {
@@ -340,13 +300,12 @@
 
     function renderEventTags(e) {
       return [
-        messageTypeBadge(e),
         sentimentBadge(e.sentiment),
+        messageTypeBadge(e),
         statusBadge(e.status),
         campaignBadge(e),
         projectBadge(e.project),
         accountBadge(e),
-        workspaceBadge(e),
       ]
         .filter(Boolean)
         .join(" ");
@@ -448,9 +407,7 @@
         if (!res.ok) return;
         const data = await res.json();
         state.heyreachAccounts = data.accounts || [];
-        state.heyreachWorkspaces = data.workspaces || [];
         state.heyreachCampaigns = data.campaigns || [];
-        state.hasOrgKey = Boolean(data.hasOrgKey);
       } catch {
         /* non-fatal */
       }
@@ -461,7 +418,6 @@
       const data = await res.json();
       state.events = data.events || [];
       populateAccountFilter();
-      populateWorkspaceFilter();
       populateCampaignFilter();
       renderList();
       if (state.selectedId) {
@@ -490,47 +446,21 @@
           .join("");
     }
 
-    function populateWorkspaceFilter() {
-      const select = document.getElementById("workspaceFilter");
-      const current = state.workspaceFilter;
-      const idSet = new Set(state.heyreachWorkspaces.map((w) => w.id));
-      for (const e of state.events) {
-        const id = getEventWorkspaceId(e);
-        if (id) idSet.add(id);
-      }
-      const ids = [...idSet].sort();
-
-      select.innerHTML =
-        `<option value="">All workspaces</option>` +
-        ids
-          .map((id) => {
-            const sample = state.events.find((e) => getEventWorkspaceId(e) === id);
-            return `<option value="${escapeHtml(id)}" ${id === current ? "selected" : ""}>${escapeHtml(formatWorkspaceLabel(id, sample))}</option>`;
-          })
-          .join("");
-    }
-
     function populateCampaignFilter() {
       const select = document.getElementById("campaignFilter");
       const current = state.campaignFilter;
-      const keyMap = new Map();
-
-      for (const c of state.heyreachCampaigns) {
-        const key = c.id != null ? `id:${c.id}` : `name:${c.name}`;
-        keyMap.set(key, c.name);
-      }
-      for (const e of state.events) {
-        const key = getEventCampaignKey(e);
-        if (key) keyMap.set(key, getEventCampaignName(e) || key);
-      }
-
-      const entries = [...keyMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+      const entries = state.heyreachCampaigns
+        .map((c) => ({
+          key: c.id != null ? `id:${c.id}` : `name:${c.name}`,
+          label: c.name,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
 
       select.innerHTML =
         `<option value="">All campaigns</option>` +
         entries
           .map(
-            ([key, label]) =>
+            ({ key, label }) =>
               `<option value="${escapeHtml(key)}" ${key === current ? "selected" : ""}>${escapeHtml(label)}</option>`,
           )
           .join("");
@@ -549,19 +479,13 @@
         );
       }
 
-      if (state.workspaceFilter) {
-        filtered = filtered.filter(
-          (e) => getEventWorkspaceId(e) === state.workspaceFilter,
-        );
-      }
-
       if (state.campaignFilter) {
         filtered = filtered.filter(
           (e) => getEventCampaignKey(e) === state.campaignFilter,
         );
       }
 
-      const filterActive = state.accountFilter || state.workspaceFilter || state.campaignFilter;
+      const filterActive = state.accountFilter || state.campaignFilter;
       if (!filtered.length) {
         list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${filterActive ? " for this filter" : ""}.</div>`;
         return;
@@ -597,8 +521,6 @@
       const draftReply = e.draft?.reply || "";
       const accountId = getEventAccountId(e);
       const accountName = getEventAccountName(e);
-      const workspaceId = getEventWorkspaceId(e);
-      const workspaceName = getEventWorkspaceName(e);
       const campaignName = getEventCampaignName(e);
       const selectedProjectId = e.draftProjectId || e.project?.id || "all";
       const messageTypeLabel = formatMessageType(getEventMessageType(e));
@@ -626,7 +548,6 @@
               ${messageTypeLabel ? `<div><dt class="text-slate-400 inline">Type: </dt><dd class="inline">${escapeHtml(messageTypeLabel)}</dd></div>` : ""}
               ${campaignName ? `<div><dt class="text-slate-400 inline">Campaign: </dt><dd class="inline">${escapeHtml(campaignName)}</dd></div>` : ""}
               ${accountId != null ? `<div><dt class="text-slate-400 inline">Account: </dt><dd class="inline">${escapeHtml(accountName || formatAccountLabel(accountId, e))}</dd></div>` : ""}
-              ${workspaceId ? `<div><dt class="text-slate-400 inline">Workspace: </dt><dd class="inline">${escapeHtml(workspaceName || formatWorkspaceLabel(workspaceId, e))}</dd></div>` : ""}
             </dl>
           </div>
 
@@ -660,6 +581,7 @@
               ${e.draft?.rationale ? `<span class="text-[11px] text-slate-400 italic">${escapeHtml(e.draft.rationale)}</span>` : ""}
             </div>
             ${e.draft?.error ? `<p class="text-xs text-slate-600 mb-2">${escapeHtml(e.draft.error)}</p>` : ""}
+            ${e.draft?.skipped && !draftReply ? `<p class="text-xs text-slate-500 mb-2">Draft generation is off. Set DRAFT_GENERATION_ENABLED=true to auto-draft on new replies, or use Regenerate draft.</p>` : ""}
             <textarea id="replyText" ${isPending ? "" : "readonly"}
               class="w-full min-h-[120px] p-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isPending ? "" : "bg-slate-50"}"
             >${escapeHtml(draftReply)}</textarea>
@@ -1113,11 +1035,6 @@
 
     document.getElementById("accountFilter").addEventListener("change", (e) => {
       state.accountFilter = e.target.value;
-      renderList();
-    });
-
-    document.getElementById("workspaceFilter").addEventListener("change", (e) => {
-      state.workspaceFilter = e.target.value;
       renderList();
     });
 

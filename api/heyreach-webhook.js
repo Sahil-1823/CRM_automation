@@ -1,31 +1,13 @@
 import { parseHeyReachPayload, verifyHeyReachSecret } from "../lib/heyreach.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
 import { classifyReplySentiment } from "../lib/sentiment.js";
-import { generateDraftReply } from "../lib/reply.js";
+import {
+  isDraftGenerationEnabled,
+  generateDraftForLead,
+  emptyDraft,
+} from "../lib/draft-pipeline.js";
 import { saveEvent } from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
-import { listProjects, selectProject } from "../lib/projects.js";
-
-function buildConversationContext(lead) {
-  const parts = [];
-  if (lead.fullName) parts.push(`Lead: ${lead.fullName}`);
-  if (lead.companyName) parts.push(`Company: ${lead.companyName}`);
-  if (lead.jobTitle) parts.push(`Title: ${lead.jobTitle}`);
-
-  if (lead.conversation?.length) {
-    parts.push(
-      "Thread:\n" +
-        lead.conversation
-          .map((m) => `${m.from === "lead" ? "Lead" : "Us"}: ${m.text}`)
-          .join("\n"),
-    );
-  } else {
-    if (lead.yourMessage) parts.push(`Our message: ${lead.yourMessage}`);
-    if (lead.replyMessage) parts.push(`Lead reply: ${lead.replyMessage}`);
-  }
-
-  return parts.join("\n");
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -56,35 +38,23 @@ export default async function handler(req, res) {
       companyName: parsed.lead.companyName,
     });
 
-    // Auto-select the best matching project using LLM classification
-    const projects = await listProjects();
-    let selectedProject = null;
-    if (projects.length) {
-      const ctx = buildConversationContext(parsed.lead);
-      selectedProject = await selectProject(ctx, projects);
-    }
+    let draftProjectId = "all";
+    let project = { id: null, name: "All projects", source: "auto" };
+    let draft = emptyDraft({ skipped: !isDraftGenerationEnabled() });
 
-    // Always draft a reply regardless of sentiment (operator reviews before send).
-    let draft = null;
-    let draftError = null;
-    try {
-      draft = await generateDraftReply({
-        replyMessage: parsed.lead.replyMessage,
-        yourMessage: parsed.lead.yourMessage,
-        leadName: parsed.lead.fullName,
-        companyName: parsed.lead.companyName,
-        jobTitle: parsed.lead.jobTitle,
-        sentiment: sentiment.sentiment,
-        isPositive: sentiment.isPositive,
-        conversation: parsed.lead.conversation,
-        project: selectedProject,
-        projectScope: selectedProject ? "project" : "all",
-      });
-    } catch (err) {
-      draftError = err.message;
+    if (isDraftGenerationEnabled()) {
+      try {
+        const result = await generateDraftForLead({
+          lead: parsed.lead,
+          sentiment,
+        });
+        draft = result.draft;
+        draftProjectId = result.draftProjectId;
+        project = result.project;
+      } catch (err) {
+        draft = emptyDraft({ error: err.message });
+      }
     }
-
-    const draftProjectId = selectedProject ? selectedProject.id : "all";
 
     const record = await saveEvent({
       lead: parsed.lead,
@@ -92,12 +62,6 @@ export default async function handler(req, res) {
         ? {
             linkedInAccountId: parsed.lead.linkedInAccountId,
             name: parsed.lead.linkedInAccountName || null,
-          }
-        : null,
-      workspace: parsed.lead.workspaceId
-        ? {
-            id: parsed.lead.workspaceId,
-            name: parsed.lead.workspaceName || null,
           }
         : null,
       campaign:
@@ -114,26 +78,8 @@ export default async function handler(req, res) {
         reasoning: sentiment.reasoning,
       },
       draftProjectId,
-      project: selectedProject
-        ? { id: selectedProject.id, name: selectedProject.name, source: "auto" }
-        : { id: null, name: "All projects", source: "auto" },
-      draft: draft
-        ? {
-            reply: draft.reply,
-            rationale: draft.rationale,
-            ragSources: draft.ragSources,
-            citedSources: draft.citedSources,
-            hasGrounding: draft.hasGrounding,
-            error: null,
-          }
-        : {
-            reply: "",
-            rationale: "",
-            ragSources: [],
-            citedSources: [],
-            hasGrounding: false,
-            error: draftError,
-          },
+      project,
+      draft,
       status: "pending_review",
     });
 
@@ -142,9 +88,8 @@ export default async function handler(req, res) {
       action: "pending_review",
       eventId: record.id,
       sentiment: sentiment.sentiment,
-      project: selectedProject
-        ? { id: selectedProject.id, name: selectedProject.name }
-        : null,
+      draftEnabled: isDraftGenerationEnabled(),
+      project: project.id ? { id: project.id, name: project.name } : null,
     });
   } catch (error) {
     console.error("heyreach-webhook error:", error);

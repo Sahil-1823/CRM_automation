@@ -39,10 +39,6 @@ BODY=$(cat <<EOF
     "firstName": "Alex",
     "lastName": "Sales"
   },
-  "workspace": {
-    "id": "ws-demo-1",
-    "name": "Demo Workspace"
-  },
   "campaignId": 78901,
   "campaign": {
     "id": 78901,

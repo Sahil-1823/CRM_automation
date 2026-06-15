@@ -5,7 +5,6 @@ import { getHeyReachMeta } from "../lib/heyreach-meta.js";
 
 function collectFromEvents(events) {
   const accountMap = new Map();
-  const workspaceMap = new Map();
   const campaignMap = new Map();
 
   for (const e of events) {
@@ -13,17 +12,6 @@ function collectFromEvents(events) {
     const accountName = e.linkedInAccount?.name;
     if (accountId != null && accountName) {
       accountMap.set(Number(accountId), accountName);
-    }
-
-    const workspaceId = e.workspace?.id ?? e.lead?.workspaceId;
-    const workspaceName = e.workspace?.name ?? e.lead?.workspaceName;
-    if (workspaceId) {
-      const id = String(workspaceId);
-      if (workspaceName) {
-        workspaceMap.set(id, workspaceName);
-      } else if (!workspaceMap.has(id)) {
-        workspaceMap.set(id, `Workspace ${id}`);
-      }
     }
 
     const campaignId = e.campaign?.id ?? e.lead?.campaignId;
@@ -39,7 +27,6 @@ function collectFromEvents(events) {
 
   return {
     accounts: [...accountMap.entries()].map(([id, name]) => ({ id, name })),
-    workspaces: [...workspaceMap.entries()].map(([id, name]) => ({ id, name })),
     campaigns: [...campaignMap.values()],
   };
 }
@@ -54,11 +41,7 @@ export default async function handler(req, res) {
 
     const events = await listEvents({ limit: 500 });
     const fromEvents = collectFromEvents(events);
-    const meta = await getHeyReachMeta(
-      fromEvents.accounts,
-      fromEvents.workspaces,
-      fromEvents.campaigns,
-    );
+    const meta = await getHeyReachMeta(fromEvents.accounts, fromEvents.campaigns);
 
     return jsonResponse(res, 200, meta);
   } catch (error) {

@@ -1,6 +1,7 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { getEvent, updateEvent } from "../lib/store.js";
 import { generateDraftReply } from "../lib/reply.js";
+import { draftFromGeneration } from "../lib/draft-pipeline.js";
 import { getProject } from "../lib/projects.js";
 import { requireAuth } from "../lib/auth.js";
 
@@ -53,12 +54,7 @@ export default async function handler(req, res) {
         ? { id: project.id, name: project.name, source: "manual" }
         : { id: null, name: "All projects", source: "manual" },
       draft: {
-        reply: draft.reply,
-        rationale: draft.rationale,
-        ragSources: draft.ragSources,
-        citedSources: draft.citedSources,
-        hasGrounding: draft.hasGrounding,
-        error: null,
+        ...draftFromGeneration(draft),
       },
     });
 

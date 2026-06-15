@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseHeyReachPayload, formatHeyReachMessageType } from "../lib/heyreach.js";
+import { isFilterableCampaignStatus } from "../lib/heyreach-meta.js";
 
 test("parseHeyReachPayload accepts common HeyReach shapes", () => {
   const parsed = parseHeyReachPayload({
@@ -85,4 +86,11 @@ test("parseHeyReachPayload extracts message type from eventType", () => {
 test("formatHeyReachMessageType humanizes webhook types", () => {
   assert.equal(formatHeyReachMessageType("every_message_reply_received"), "Reply received");
   assert.equal(formatHeyReachMessageType("MESSAGE_REPLY_RECEIVED"), "First reply");
+});
+
+test("isFilterableCampaignStatus excludes completed campaigns", () => {
+  assert.equal(isFilterableCampaignStatus("IN_PROGRESS"), true);
+  assert.equal(isFilterableCampaignStatus("PAUSED"), true);
+  assert.equal(isFilterableCampaignStatus("FINISHED"), false);
+  assert.equal(isFilterableCampaignStatus("COMPLETED"), false);
 });
