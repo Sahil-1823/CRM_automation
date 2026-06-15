@@ -1,8 +1,10 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { listEvents, getEvent, updateEvent, isUsingRedis } from "../lib/store.js";
+import { requireAuth } from "../lib/auth.js";
 
 export default async function handler(req, res) {
   try {
+    if (!(await requireAuth(req, res))) return;
     const url = new URL(req.url, "http://localhost");
     const id = url.searchParams.get("id");
 

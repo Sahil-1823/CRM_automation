@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HeyReach Reply Inbox</title>
+  <title>Admin · HeyReach Inbox</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -17,10 +17,11 @@
   <div class="h-full flex flex-col">
     <header class="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
       <div>
-        <h1 class="text-base font-semibold">HeyReach Reply Inbox</h1>
-        <p class="text-xs text-slate-500">Sentiment → RAG draft → review → send via HeyReach</p>
+        <h1 class="text-base font-semibold">Admin dashboard</h1>
+        <p class="text-xs text-slate-500">HeyReach replies · sentiment · RAG · review & send</p>
       </div>
       <div class="flex gap-2">
+        <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Documents</button>
         <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
       </div>
@@ -353,6 +354,12 @@
     });
 
     document.getElementById("refreshBtn").addEventListener("click", loadEvents);
+
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login.html";
+    });
+
     loadEvents();
     setInterval(loadEvents, 15000);
   </script>

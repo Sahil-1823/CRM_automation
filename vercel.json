@@ -6,7 +6,11 @@
   },
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/((?!api/|login\\.html).*)",
       "destination": "/index.html"
     }
   ]

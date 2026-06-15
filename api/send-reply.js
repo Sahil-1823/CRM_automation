@@ -1,6 +1,7 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { getEvent, updateEvent } from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach.js";
+import { requireAuth } from "../lib/auth.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -8,6 +9,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (!(await requireAuth(req, res))) return;
     const url = new URL(req.url, "http://localhost");
     const id = url.searchParams.get("id");
     if (!id) return jsonResponse(res, 400, { error: "Missing ?id=" });
