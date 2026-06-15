@@ -56,6 +56,7 @@
         <div class="flex gap-1 text-sm">
           <button data-kb-tab="documents" class="kb-tab px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium">Documents</button>
           <button data-kb-tab="projects" class="kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">Projects</button>
+          <button data-kb-tab="accounts" class="kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">LinkedIn accounts</button>
         </div>
         <button id="closeDocs" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
       </div>
@@ -144,13 +145,37 @@
         <div id="projectList" class="space-y-2"></div>
       </div>
 
+      <!-- ── LINKEDIN ACCOUNTS TAB ── -->
+      <div id="kbAccounts" class="hidden p-5 overflow-y-auto scrollbar flex-1 space-y-5">
+        <p class="text-xs text-slate-500">
+          Register your HeyReach LinkedIn accounts here. Each account needs a display name and the numeric
+          <strong>linkedInAccountId</strong> from HeyReach (visible in webhook payloads or HeyReach dashboard).
+          Use the dropdown in each conversation to choose which account sends the reply.
+        </p>
+
+        <div class="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50">
+          <h3 id="accountFormTitle" class="text-sm font-medium">Add LinkedIn account</h3>
+          <input type="hidden" id="editAccountId" value="" />
+          <input id="accountLabel" type="text" placeholder="Display name * (e.g. John — Sales)"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+          <input id="accountHeyReachId" type="number" placeholder="HeyReach linkedInAccountId * (numeric)"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+          <div class="flex gap-2">
+            <button id="saveAccountBtn" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex-1">Save account</button>
+            <button id="cancelAccountBtn" class="hidden text-sm px-3 py-2 border border-slate-200 rounded-lg hover:bg-slate-100">Cancel</button>
+          </div>
+        </div>
+
+        <div id="accountList" class="space-y-2"></div>
+      </div>
+
     </div>
   </div>
 
   <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50"></div>
 
   <script>
-    const state = { events: [], selectedId: null, filter: "all", projects: [] };
+    const state = { events: [], selectedId: null, filter: "all", projects: [], accounts: [] };
 
     const escapeHtml = (s) =>
       String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -186,6 +211,11 @@
     const projectBadge = (project) => {
       if (!project?.name) return "";
       return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Project: ${escapeHtml(project.name)}</span>`;
+    };
+
+    const accountBadge = (account) => {
+      if (!account?.label) return "";
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">${escapeHtml(account.label)}</span>`;
     };
 
     function toast(msg) {
@@ -309,19 +339,46 @@
               <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown")}</span>
               <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(e.createdAt)}</span>
             </div>
-            <div class="flex flex-wrap gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)}</div>
+            <div class="flex flex-wrap gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)} ${accountBadge(e.linkedInAccount)}</div>
           </button>`;
       }).join("");
 
       list.querySelectorAll(".event-item").forEach((el) => {
         el.addEventListener("click", async () => {
           if (!state.projects.length) await loadProjects();
+          if (!state.accounts.length) await loadAccounts();
           state.selectedId = el.dataset.id;
           renderList();
           const ev = state.events.find((e) => e.id === state.selectedId);
           if (ev) renderDetail(ev);
         });
       });
+    }
+
+    function buildAccountOptions(e) {
+      const selectedId =
+        e.linkedInAccount?.accountId ||
+        state.accounts.find((a) => a.linkedInAccountId === e.lead?.linkedInAccountId)?.id ||
+        "";
+
+      const opts = [`<option value="">— Select LinkedIn account —</option>`];
+      for (const a of state.accounts) {
+        const sel = selectedId === a.id ? "selected" : "";
+        opts.push(
+          `<option value="${escapeHtml(a.id)}" ${sel}>${escapeHtml(a.label)} (ID: ${a.linkedInAccountId})</option>`,
+        );
+      }
+
+      // Webhook account not in configured list
+      const webhookId = e.lead?.linkedInAccountId;
+      if (webhookId && !state.accounts.some((a) => a.linkedInAccountId === webhookId)) {
+        const sel = !selectedId ? "selected" : "";
+        opts.push(
+          `<option value="webhook:${webhookId}" ${sel}>Webhook account (ID: ${webhookId})</option>`,
+        );
+      }
+
+      return opts.join("");
     }
 
     function renderDetail(e) {
@@ -346,7 +403,7 @@
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <div class="flex justify-between gap-3 flex-wrap">
               <h2 class="text-xl font-semibold">${escapeHtml(lead.fullName || "Unknown")}</h2>
-              <div class="flex flex-wrap gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)}</div>
+              <div class="flex flex-wrap gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)} ${accountBadge(e.linkedInAccount)}</div>
             </div>
             <p class="text-xs text-slate-500 mt-2">${escapeHtml(e.sentiment?.reasoning || "")}</p>
           </div>
@@ -356,14 +413,25 @@
             ${renderThread(lead.conversation)}
           </div>
 
-          <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
+          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+            <div>
+              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">LinkedIn account (sender)</label>
+              <select id="chatAccountSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" ${isPending ? "" : "disabled"}>
+                ${buildAccountOptions(e)}
+              </select>
+              <p class="text-[11px] text-slate-400 mt-1">
+                Which HeyReach LinkedIn account this reply is sent from.
+                ${!state.accounts.length ? '<span class="text-amber-600">Add accounts under Knowledge base → LinkedIn accounts.</span>' : ""}
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-end justify-between gap-3">
               <div class="min-w-[200px] flex-1">
                 <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Project context</label>
                 <select id="chatProjectSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" ${isPending ? "" : "disabled"}>
                   ${projectOptions}
                 </select>
-                <p class="text-[11px] text-slate-400 mt-1">All projects searches every document. Pick one project to scope RAG to that project + global docs.</p>
+                <p class="text-[11px] text-slate-400 mt-1">All projects searches every document. Pick one project to scope RAG.</p>
               </div>
               ${isPending ? `<button id="regenerateBtn" class="text-sm px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 shrink-0">Regenerate draft</button>` : ""}
             </div>
@@ -399,7 +467,42 @@
         document.getElementById("sendBtn").addEventListener("click", () => sendReply(e.id));
         document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
         document.getElementById("regenerateBtn").addEventListener("click", () => regenerateDraft(e.id));
+        document.getElementById("chatAccountSelect").addEventListener("change", () => saveAccountSelection(e.id));
       }
+    }
+
+    async function saveAccountSelection(id) {
+      const raw = document.getElementById("chatAccountSelect").value;
+      if (!raw) return;
+
+      let body;
+      if (raw.startsWith("webhook:")) {
+        body = { linkedInAccountId: Number(raw.slice(8)) };
+      } else {
+        body = { accountId: raw };
+      }
+
+      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        toast("LinkedIn account updated");
+        await loadEvents();
+      } else {
+        const data = await res.json();
+        toast(data.message || "Failed to save account");
+      }
+    }
+
+    function getSelectedAccountPayload() {
+      const raw = document.getElementById("chatAccountSelect")?.value;
+      if (!raw) return {};
+      if (raw.startsWith("webhook:")) {
+        return { linkedInAccountId: Number(raw.slice(8)) };
+      }
+      return { accountId: raw };
     }
 
     async function regenerateDraft(id) {
@@ -452,6 +555,13 @@
     async function sendReply(id) {
       const reply = document.getElementById("replyText").value.trim();
       if (!reply) { toast("Reply is empty"); return; }
+
+      const accountPayload = getSelectedAccountPayload();
+      if (!accountPayload.accountId && !accountPayload.linkedInAccountId) {
+        toast("Select a LinkedIn account before sending");
+        return;
+      }
+
       const btn = document.getElementById("sendBtn");
       btn.disabled = true;
       btn.textContent = "Sending…";
@@ -459,7 +569,7 @@
         const res = await fetch(`/api/send-reply?id=${encodeURIComponent(id)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reply }),
+          body: JSON.stringify({ reply, ...accountPayload }),
         });
         const data = await res.json();
         if (res.ok) {
@@ -476,6 +586,98 @@
         btn.textContent = "Send via HeyReach";
       }
     }
+
+    // ── LinkedIn accounts ─────────────────────────────────────────
+
+    async function loadAccounts() {
+      const res = await fetch("/api/accounts");
+      const data = await res.json();
+      state.accounts = data.accounts || [];
+      renderAccountList();
+    }
+
+    function renderAccountList() {
+      const list = document.getElementById("accountList");
+      if (!list) return;
+      if (!state.accounts.length) {
+        list.innerHTML = `<p class="text-xs text-slate-400">No accounts yet. Add your HeyReach LinkedIn accounts above.</p>`;
+        return;
+      }
+      list.innerHTML = state.accounts.map((a) => `
+        <div class="border border-slate-200 rounded-xl p-4 bg-white">
+          <div class="flex justify-between items-start gap-2">
+            <div class="min-w-0">
+              <div class="font-medium text-sm truncate">${escapeHtml(a.label)}</div>
+              <div class="text-xs text-slate-500 mt-0.5">HeyReach ID: ${a.linkedInAccountId}</div>
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <button data-edit-acct="${escapeHtml(a.id)}" class="edit-account text-xs text-indigo-600 hover:underline">Edit</button>
+              <button data-del-acct="${escapeHtml(a.id)}" class="del-account text-xs text-rose-600 hover:underline">Delete</button>
+            </div>
+          </div>
+          <div class="text-[11px] text-slate-400 mt-2">${fmtTime(a.createdAt)}</div>
+        </div>
+      `).join("");
+
+      list.querySelectorAll(".del-account").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Delete this LinkedIn account?")) return;
+          const res = await fetch(`/api/accounts?id=${encodeURIComponent(btn.dataset.delAcct)}`, { method: "DELETE" });
+          if (res.ok) { toast("Account deleted"); await loadAccounts(); }
+          else { const d = await res.json(); toast(d.message || "Delete failed"); }
+        });
+      });
+
+      list.querySelectorAll(".edit-account").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const acct = state.accounts.find((a) => a.id === btn.dataset.editAcct);
+          if (!acct) return;
+          document.getElementById("editAccountId").value = acct.id;
+          document.getElementById("accountLabel").value = acct.label;
+          document.getElementById("accountHeyReachId").value = acct.linkedInAccountId;
+          document.getElementById("accountFormTitle").textContent = "Edit LinkedIn account";
+          document.getElementById("cancelAccountBtn").classList.remove("hidden");
+        });
+      });
+    }
+
+    document.getElementById("saveAccountBtn").addEventListener("click", async () => {
+      const id = document.getElementById("editAccountId").value;
+      const body = {
+        label: document.getElementById("accountLabel").value,
+        linkedInAccountId: document.getElementById("accountHeyReachId").value,
+      };
+      if (!body.label.trim()) { toast("Display name is required"); return; }
+      if (!body.linkedInAccountId) { toast("HeyReach account ID is required"); return; }
+
+      const url = id ? `/api/accounts?id=${encodeURIComponent(id)}` : "/api/accounts";
+      const method = id ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast(id ? "Account updated" : "Account added");
+        document.getElementById("editAccountId").value = "";
+        document.getElementById("accountLabel").value = "";
+        document.getElementById("accountHeyReachId").value = "";
+        document.getElementById("accountFormTitle").textContent = "Add LinkedIn account";
+        document.getElementById("cancelAccountBtn").classList.add("hidden");
+        await loadAccounts();
+      } else {
+        toast(data.message || "Failed to save account");
+      }
+    });
+
+    document.getElementById("cancelAccountBtn").addEventListener("click", () => {
+      document.getElementById("editAccountId").value = "";
+      document.getElementById("accountLabel").value = "";
+      document.getElementById("accountHeyReachId").value = "";
+      document.getElementById("accountFormTitle").textContent = "Add LinkedIn account";
+      document.getElementById("cancelAccountBtn").classList.add("hidden");
+    });
 
     // ── Projects ──────────────────────────────────────────────────
 
@@ -809,18 +1011,20 @@
         const tab = btn.dataset.kbTab;
         document.getElementById("kbDocuments").classList.toggle("hidden", tab !== "documents");
         document.getElementById("kbProjects").classList.toggle("hidden", tab !== "projects");
+        document.getElementById("kbAccounts").classList.toggle("hidden", tab !== "accounts");
         document.querySelectorAll(".kb-tab").forEach((b) => {
           b.className = "kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 text-sm";
         });
         btn.className = "kb-tab px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium text-sm";
         if (tab === "projects") loadProjects();
         if (tab === "documents") loadDocuments();
+        if (tab === "accounts") loadAccounts();
       });
     });
 
     document.getElementById("docsBtn").addEventListener("click", () => {
       document.getElementById("docsModal").classList.remove("hidden");
-      loadProjects().then(() => loadDocuments());
+      Promise.all([loadProjects(), loadAccounts()]).then(() => loadDocuments());
     });
     document.getElementById("closeDocs").addEventListener("click", () => {
       document.getElementById("docsModal").classList.add("hidden");
@@ -856,6 +1060,7 @@
 
     loadEvents();
     loadProjects();
+    loadAccounts();
     setInterval(loadEvents, 15000);
   </script>
 </body>

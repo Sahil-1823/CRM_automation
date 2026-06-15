@@ -1,6 +1,49 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { listEvents, getEvent, updateEvent, isUsingRedis } from "../lib/store.js";
 import { requireAuth } from "../lib/auth.js";
+import { resolveLinkedInAccount, getAccount } from "../lib/accounts.js";
+
+async function applyLinkedInAccountPatch(current, body) {
+  if (body.accountId === undefined && body.linkedInAccountId === undefined) {
+    return {};
+  }
+
+  let linkedInAccountId = body.linkedInAccountId;
+  let accountId = body.accountId;
+
+  if (accountId) {
+    const account = await getAccount(accountId);
+    if (!account) throw new Error(`Account not found: ${accountId}`);
+    return {
+      linkedInAccount: {
+        accountId: account.id,
+        linkedInAccountId: account.linkedInAccountId,
+        label: account.label,
+      },
+      lead: {
+        ...(current.lead || {}),
+        linkedInAccountId: account.linkedInAccountId,
+      },
+    };
+  }
+
+  if (linkedInAccountId != null && linkedInAccountId !== "") {
+    const resolved = await resolveLinkedInAccount(linkedInAccountId);
+    if (!resolved) throw new Error("Invalid LinkedIn account ID");
+    return {
+      linkedInAccount: resolved,
+      lead: {
+        ...(current.lead || {}),
+        linkedInAccountId: resolved.linkedInAccountId,
+      },
+    };
+  }
+
+  return {
+    linkedInAccount: null,
+    lead: { ...(current.lead || {}), linkedInAccountId: null },
+  };
+}
 
 export default async function handler(req, res) {
   try {
@@ -34,6 +77,9 @@ export default async function handler(req, res) {
         patch.draft = { ...(current.draft || {}), reply: body.draftReply };
       }
       if (typeof body.status === "string") patch.status = body.status;
+
+      const accountPatch = await applyLinkedInAccountPatch(current, body);
+      Object.assign(patch, accountPatch);
 
       const updated = await updateEvent(id, patch);
       return jsonResponse(res, 200, { event: updated });
