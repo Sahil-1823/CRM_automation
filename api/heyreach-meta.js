@@ -17,8 +17,13 @@ function collectFromEvents(events) {
 
     const workspaceId = e.workspace?.id ?? e.lead?.workspaceId;
     const workspaceName = e.workspace?.name ?? e.lead?.workspaceName;
-    if (workspaceId && workspaceName) {
-      workspaceMap.set(String(workspaceId), workspaceName);
+    if (workspaceId) {
+      const id = String(workspaceId);
+      if (workspaceName) {
+        workspaceMap.set(id, workspaceName);
+      } else if (!workspaceMap.has(id)) {
+        workspaceMap.set(id, `Workspace ${id}`);
+      }
     }
 
     const campaignId = e.campaign?.id ?? e.lead?.campaignId;

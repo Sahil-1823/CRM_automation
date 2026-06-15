@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseHeyReachPayload } from "../lib/heyreach.js";
+import { parseHeyReachPayload, formatHeyReachMessageType } from "../lib/heyreach.js";
 
 test("parseHeyReachPayload accepts common HeyReach shapes", () => {
   const parsed = parseHeyReachPayload({
@@ -69,4 +69,20 @@ test("parseHeyReachPayload extracts campaign id and name", () => {
   assert.equal(parsed.valid, true);
   assert.equal(parsed.lead.campaignId, 78901);
   assert.equal(parsed.lead.campaignName, "Q2 Outbound");
+});
+
+test("parseHeyReachPayload extracts message type from eventType", () => {
+  const parsed = parseHeyReachPayload({
+    lead: { fullName: "Jane Doe" },
+    message: "Thanks!",
+    eventType: "inmail_reply_received",
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.messageType, "inmail_reply_received");
+});
+
+test("formatHeyReachMessageType humanizes webhook types", () => {
+  assert.equal(formatHeyReachMessageType("every_message_reply_received"), "Reply received");
+  assert.equal(formatHeyReachMessageType("MESSAGE_REPLY_RECEIVED"), "First reply");
 });

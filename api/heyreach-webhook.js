@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       selectedProject = await selectProject(ctx, projects);
     }
 
+    // Always draft a reply regardless of sentiment (operator reviews before send).
     let draft = null;
     let draftError = null;
     try {
@@ -106,6 +107,7 @@ export default async function handler(req, res) {
               name: parsed.lead.campaignName || null,
             }
           : null,
+      messageType: parsed.lead.messageType || parsed.lead.eventType || null,
       sentiment: {
         label: sentiment.sentiment,
         isPositive: sentiment.isPositive,
