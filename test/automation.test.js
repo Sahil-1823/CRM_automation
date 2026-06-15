@@ -1,20 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getReminderDay } from "../lib/crm/index.js";
 import { parseHeyReachPayload } from "../lib/heyreach.js";
-
-test("getReminderDay maps day windows", () => {
-  assert.equal(getReminderDay(1), null);
-  assert.equal(getReminderDay(2), 3);
-  assert.equal(getReminderDay(3), 3);
-  assert.equal(getReminderDay(4), 3);
-  assert.equal(getReminderDay(5), null);
-  assert.equal(getReminderDay(6), 7);
-  assert.equal(getReminderDay(8), 7);
-  assert.equal(getReminderDay(13), 14);
-  assert.equal(getReminderDay(15), 14);
-  assert.equal(getReminderDay(16), null);
-});
 
 test("parseHeyReachPayload accepts common HeyReach shapes", () => {
   const parsed = parseHeyReachPayload({
@@ -32,6 +18,42 @@ test("parseHeyReachPayload accepts common HeyReach shapes", () => {
 
   assert.equal(parsed.valid, true);
   assert.equal(parsed.lead.fullName, "Jane Doe");
-  assert.equal(parsed.lead.linkedInUrl, "https://linkedin.com/in/janedoe");
   assert.equal(parsed.lead.companyName, "Acme Inc");
+  assert.equal(parsed.lead.conversation.length, 2);
+  assert.equal(parsed.lead.conversation[0].from, "us");
+  assert.equal(parsed.lead.conversation[1].from, "lead");
+});
+
+test("parseHeyReachPayload extracts HeyReach send fields", () => {
+  const parsed = parseHeyReachPayload({
+    lead: {
+      fullName: "Jane Doe",
+      profileUrl: "https://linkedin.com/in/janedoe",
+    },
+    message: "Sounds good!",
+    conversationId: "conv-123",
+    linkedInAccountId: 456,
+    eventType: "every_message_reply_received",
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.conversationId, "conv-123");
+  assert.equal(parsed.lead.linkedInAccountId, 456);
+});
+
+test("parseHeyReachPayload parses message thread when provided", () => {
+  const parsed = parseHeyReachPayload({
+    lead: { fullName: "Jane Doe" },
+    message: "Latest reply",
+    messages: [
+      { text: "Hi Jane, interested in a call?", direction: "outbound" },
+      { text: "Sure, tell me more.", isFromLead: true },
+      { text: "Latest reply", isFromLead: true },
+    ],
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.conversation.length, 3);
+  assert.equal(parsed.lead.conversation[0].from, "us");
+  assert.equal(parsed.lead.conversation[2].text, "Latest reply");
 });

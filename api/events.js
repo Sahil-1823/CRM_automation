@@ -1,5 +1,5 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
-import { listEvents, getEvent, updateEvent, isUsingKv } from "../lib/store.js";
+import { listEvents, getEvent, updateEvent, isUsingRedis } from "../lib/store.js";
 
 export default async function handler(req, res) {
   try {
@@ -17,26 +17,23 @@ export default async function handler(req, res) {
       const events = await listEvents({ status, limit });
       return jsonResponse(res, 200, {
         events,
-        storage: isUsingKv() ? "kv" : "file",
+        storage: isUsingRedis() ? "redis" : "file",
       });
     }
 
     if (req.method === "PATCH") {
       if (!id) return jsonResponse(res, 400, { error: "Missing ?id=" });
       const body = await readJsonBody(req);
-      const allowed = {};
-      if (typeof body.draftReply === "string") {
-        const current = await getEvent(id);
-        if (!current) return jsonResponse(res, 404, { error: "Not found" });
-        allowed.draft = {
-          ...(current.draft || {}),
-          reply: body.draftReply,
-        };
-      }
-      if (typeof body.status === "string") allowed.status = body.status;
-      if (typeof body.note === "string") allowed.note = body.note;
+      const current = await getEvent(id);
+      if (!current) return jsonResponse(res, 404, { error: "Not found" });
 
-      const updated = await updateEvent(id, allowed);
+      const patch = {};
+      if (typeof body.draftReply === "string") {
+        patch.draft = { ...(current.draft || {}), reply: body.draftReply };
+      }
+      if (typeof body.status === "string") patch.status = body.status;
+
+      const updated = await updateEvent(id, patch);
       return jsonResponse(res, 200, { event: updated });
     }
 

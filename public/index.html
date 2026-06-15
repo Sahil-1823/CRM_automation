@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CRM Automation · Reply Inbox</title>
+  <title>HeyReach Reply Inbox</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -15,47 +15,55 @@
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
   <div class="h-full flex flex-col">
-    <!-- Header -->
     <header class="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">CR</div>
-        <div>
-          <h1 class="text-base font-semibold leading-tight">Reply Inbox</h1>
-          <p class="text-xs text-slate-500 leading-tight">HeyReach → Sentiment → Review → Send</p>
-        </div>
+      <div>
+        <h1 class="text-base font-semibold">HeyReach Reply Inbox</h1>
+        <p class="text-xs text-slate-500">Sentiment → RAG draft → review → send via HeyReach</p>
       </div>
-      <div class="flex items-center gap-2">
-        <div id="storageBadge" class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">storage: …</div>
-        <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 transition">
-          Refresh
-        </button>
+      <div class="flex gap-2">
+        <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Documents</button>
+        <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
       </div>
     </header>
 
     <div class="flex-1 flex overflow-hidden">
-      <!-- Sidebar list -->
-      <aside class="w-[380px] border-r border-slate-200 bg-white flex flex-col">
-        <div class="px-4 py-3 border-b border-slate-200">
-          <div class="flex items-center gap-1.5 text-xs">
-            <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-full bg-slate-900 text-white">All</button>
-            <button data-filter="pending_review" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Pending</button>
-            <button data-filter="sent" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Sent</button>
-            <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Dismissed</button>
-          </div>
+      <aside class="w-80 border-r border-slate-200 bg-white flex flex-col">
+        <div class="px-4 py-3 border-b border-slate-200 flex flex-wrap gap-1.5 text-xs">
+          <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-full bg-slate-900 text-white">All</button>
+          <button data-filter="pending_review" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Pending</button>
+          <button data-filter="sent" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Sent</button>
+          <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Dismissed</button>
         </div>
         <div id="list" class="flex-1 overflow-y-auto scrollbar"></div>
       </aside>
 
-      <!-- Detail panel -->
       <main id="detail" class="flex-1 overflow-y-auto scrollbar bg-slate-50">
-        <div class="h-full grid place-items-center text-slate-400 text-sm">
-          Select a conversation to review.
-        </div>
+        <div class="h-full grid place-items-center text-slate-400 text-sm">Select a conversation to review.</div>
       </main>
     </div>
   </div>
 
-  <!-- Toast -->
+  <!-- Documents modal -->
+  <div id="docsModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+      <div class="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
+        <h2 class="font-semibold">Knowledge base</h2>
+        <button id="closeDocs" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+      </div>
+      <div class="p-5 overflow-y-auto scrollbar flex-1 space-y-4">
+        <p class="text-xs text-slate-500">Add product docs, pitch notes, or FAQs. Draft replies use these via RAG.</p>
+        <form id="docForm" class="space-y-2">
+          <input id="docTitle" type="text" placeholder="Document title" required
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <textarea id="docContent" rows="5" placeholder="Paste document content…" required
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+          <button type="submit" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Add document</button>
+        </form>
+        <div id="docList" class="space-y-2"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
 
   <script>
@@ -76,19 +84,6 @@
       return d.toLocaleDateString();
     };
 
-    const sentimentBadge = (s) => {
-      const label = s?.label || "unknown";
-      const isPos = s?.isPositive;
-      const cls = isPos
-        ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-        : label === "negative/neutral"
-          ? "bg-rose-50 text-rose-700 border-rose-200"
-          : "bg-slate-100 text-slate-600 border-slate-200";
-      return `<span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border ${cls}">
-        <span class="w-1.5 h-1.5 rounded-full ${isPos ? "bg-emerald-500" : "bg-rose-500"}"></span>${escapeHtml(label)}
-      </span>`;
-    };
-
     const statusBadge = (status) => {
       const map = {
         pending_review: ["bg-amber-100 text-amber-800", "Pending review"],
@@ -99,6 +94,12 @@
       return `<span class="text-[11px] px-2 py-0.5 rounded-full ${cls}">${escapeHtml(label)}</span>`;
     };
 
+    const sentimentBadge = (s) => {
+      const isPos = s?.isPositive;
+      const cls = isPos ? "bg-emerald-100 text-emerald-700" : "bg-rose-50 text-rose-700";
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full ${cls}">${escapeHtml(s?.label || "unknown")}</span>`;
+    };
+
     function toast(msg) {
       const el = document.getElementById("toast");
       el.textContent = msg;
@@ -107,11 +108,41 @@
       toast._t = setTimeout(() => el.classList.add("hidden"), 2400);
     }
 
+    function renderThread(conversation) {
+      if (!conversation?.length) {
+        return `<p class="text-sm text-slate-400">No conversation history available.</p>`;
+      }
+      return conversation.map((msg) => {
+        const isLead = msg.from === "lead";
+        const isUs = msg.from === "us";
+        const label = isLead ? "Lead" : isUs ? "You" : "Message";
+        const bubble = isLead
+          ? "bg-indigo-50 border-indigo-100 mr-8"
+          : isUs ? "bg-white border-slate-200 ml-8" : "bg-slate-50 border-slate-200";
+        return `
+          <div class="mb-3">
+            <div class="text-[11px] text-slate-400 mb-1">${escapeHtml(label)}</div>
+            <div class="border rounded-lg p-3 text-sm whitespace-pre-wrap ${bubble}">${escapeHtml(msg.text)}</div>
+          </div>`;
+      }).join("");
+    }
+
+    function renderRagSources(sources) {
+      if (!sources?.length) {
+        return `<p class="text-xs text-slate-400">No reference documents matched.</p>`;
+      }
+      return sources.map((s) => `
+        <div class="text-xs border border-slate-100 rounded-lg p-2 mb-2 bg-slate-50">
+          <div class="font-medium text-slate-600 mb-1">${escapeHtml(s.title)}</div>
+          <div class="text-slate-500 line-clamp-2">${escapeHtml(s.excerpt)}</div>
+        </div>
+      `).join("");
+    }
+
     async function loadEvents() {
       const res = await fetch("/api/events?limit=200");
       const data = await res.json();
       state.events = data.events || [];
-      document.getElementById("storageBadge").textContent = `storage: ${data.storage || "?"}`;
       renderList();
       if (state.selectedId) {
         const still = state.events.find((e) => e.id === state.selectedId);
@@ -126,35 +157,28 @@
         : state.events.filter((e) => e.status === state.filter);
 
       if (!filtered.length) {
-        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${state.filter !== "all" ? " in this view" : " yet"}.</div>`;
+        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations yet.</div>`;
         return;
       }
 
       list.innerHTML = filtered.map((e) => {
         const lead = e.lead || {};
-        const preview = (lead.replyMessage || "").slice(0, 90);
         const selected = e.id === state.selectedId;
         return `
           <button data-id="${e.id}" class="event-item w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${selected ? "bg-indigo-50/60 border-l-2 border-l-indigo-500" : ""}">
-            <div class="flex items-center justify-between gap-2 mb-1">
-              <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown lead")}</span>
+            <div class="flex justify-between gap-2 mb-1">
+              <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown")}</span>
               <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(e.createdAt)}</span>
             </div>
-            <div class="text-xs text-slate-500 truncate mb-1.5">${escapeHtml(lead.companyName || lead.jobTitle || "—")}</div>
-            <div class="text-xs text-slate-600 line-clamp-2 mb-2">${escapeHtml(preview)}${lead.replyMessage?.length > 90 ? "…" : ""}</div>
-            <div class="flex items-center gap-1.5 flex-wrap">
-              ${sentimentBadge(e.sentiment)}
-              ${statusBadge(e.status)}
-            </div>
-          </button>
-        `;
+            <div class="flex gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)}</div>
+          </button>`;
       }).join("");
 
       list.querySelectorAll(".event-item").forEach((el) => {
         el.addEventListener("click", () => {
           state.selectedId = el.dataset.id;
-          const ev = state.events.find((e) => e.id === state.selectedId);
           renderList();
+          const ev = state.events.find((e) => e.id === state.selectedId);
           if (ev) renderDetail(ev);
         });
       });
@@ -162,93 +186,49 @@
 
     function renderDetail(e) {
       const lead = e.lead || {};
+      const isPending = e.status === "pending_review";
       const draftReply = e.draft?.reply || "";
-      const isSent = e.status === "sent";
-      const detail = document.getElementById("detail");
 
-      detail.innerHTML = `
-        <div class="max-w-3xl mx-auto p-6 space-y-5 fade-in">
-          <!-- Lead card -->
+      document.getElementById("detail").innerHTML = `
+        <div class="max-w-2xl mx-auto p-6 space-y-5 fade-in">
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <div class="flex items-center gap-2 mb-1">
-                  <h2 class="text-lg font-semibold">${escapeHtml(lead.fullName || "Unknown lead")}</h2>
-                  ${statusBadge(e.status)}
-                </div>
-                <div class="text-sm text-slate-500">
-                  ${escapeHtml(lead.jobTitle || "")}${lead.jobTitle && lead.companyName ? " · " : ""}${escapeHtml(lead.companyName || "")}
-                </div>
-                ${lead.linkedInUrl ? `<a href="${escapeHtml(lead.linkedInUrl)}" target="_blank" class="text-xs text-indigo-600 hover:underline mt-1 inline-block">${escapeHtml(lead.linkedInUrl)}</a>` : ""}
-              </div>
-              <div class="text-right">
-                ${sentimentBadge(e.sentiment)}
-                <div class="text-[11px] text-slate-400 mt-1">${escapeHtml(fmtTime(e.createdAt))}</div>
-              </div>
+            <div class="flex justify-between gap-3">
+              <h2 class="text-xl font-semibold">${escapeHtml(lead.fullName || "Unknown")}</h2>
+              <div class="flex gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)}</div>
             </div>
-            ${lead.campaignName ? `<div class="mt-3 text-xs text-slate-500">Campaign: <span class="text-slate-700">${escapeHtml(lead.campaignName)}</span></div>` : ""}
+            <p class="text-xs text-slate-500 mt-2">${escapeHtml(e.sentiment?.reasoning || "")}</p>
           </div>
 
-          <!-- Conversation -->
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Conversation</h3>
-            ${lead.yourMessage ? `
-              <div class="mb-3">
-                <div class="text-[11px] text-slate-400 mb-1">Your previous message</div>
-                <div class="bg-slate-50 rounded-lg p-3 text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(lead.yourMessage)}</div>
-              </div>
-            ` : ""}
-            <div>
-              <div class="text-[11px] text-slate-400 mb-1">Lead's reply</div>
-              <div class="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 text-sm text-slate-800 whitespace-pre-wrap">${escapeHtml(lead.replyMessage || "")}</div>
-            </div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">Conversation</h3>
+            ${renderThread(lead.conversation)}
           </div>
 
-          <!-- Sentiment analysis -->
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Sentiment analysis</h3>
-              ${sentimentBadge(e.sentiment)}
-            </div>
-            <p class="text-sm text-slate-700">${escapeHtml(e.sentiment?.reasoning || "—")}</p>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Reference used (RAG)</h3>
+            ${renderRagSources(e.draft?.ragSources)}
           </div>
 
-          <!-- Draft reply -->
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Suggested reply</h3>
+            <div class="flex justify-between mb-3">
+              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft reply</h3>
               ${e.draft?.rationale ? `<span class="text-[11px] text-slate-400 italic">${escapeHtml(e.draft.rationale)}</span>` : ""}
             </div>
-            ${e.draft?.error ? `<div class="text-xs text-rose-600 mb-2">Draft generation failed: ${escapeHtml(e.draft.error)}</div>` : ""}
-            <textarea id="replyText" ${isSent ? "readonly" : ""}
-              class="w-full min-h-[140px] p-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${isSent ? "bg-slate-50" : ""}"
-              placeholder="Write your reply…">${escapeHtml(draftReply)}</textarea>
-            <div class="flex items-center justify-between mt-3">
-              <div class="text-xs text-slate-400">
-                ${isSent && e.sentAt ? `Sent ${fmtTime(e.sentAt)}` : "Edit freely before sending."}
+            ${e.draft?.error ? `<p class="text-xs text-rose-600 mb-2">${escapeHtml(e.draft.error)}</p>` : ""}
+            <textarea id="replyText" ${isPending ? "" : "readonly"}
+              class="w-full min-h-[120px] p-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isPending ? "" : "bg-slate-50"}"
+            >${escapeHtml(draftReply)}</textarea>
+            ${isPending ? `
+              <div class="flex justify-end gap-2 mt-3">
+                <button id="dismissBtn" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-100">Dismiss</button>
+                <button id="saveBtn" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-100">Save</button>
+                <button id="sendBtn" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">Send via HeyReach</button>
               </div>
-              <div class="flex gap-2">
-                ${!isSent ? `
-                  <button id="dismissBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100">Dismiss</button>
-                  <button id="saveBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100">Save draft</button>
-                  <button id="sendBtn" class="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-medium">Send reply</button>
-                ` : `
-                  <span class="text-xs text-emerald-600 font-medium">✓ Sent</span>
-                `}
-              </div>
-            </div>
+            ` : e.status === "sent" ? `<p class="text-xs text-emerald-600 mt-2">✓ Sent via HeyReach ${fmtTime(e.sentAt)}</p>` : ""}
           </div>
+        </div>`;
 
-          ${e.sendResult ? `
-            <div class="bg-white rounded-xl border border-slate-200 p-5">
-              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Send result</h3>
-              <pre class="text-xs bg-slate-50 rounded-lg p-3 overflow-x-auto">${escapeHtml(JSON.stringify(e.sendResult, null, 2))}</pre>
-            </div>
-          ` : ""}
-        </div>
-      `;
-
-      if (!isSent) {
+      if (isPending) {
         document.getElementById("saveBtn").addEventListener("click", () => saveDraft(e.id));
         document.getElementById("sendBtn").addEventListener("click", () => sendReply(e.id));
         document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
@@ -262,10 +242,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ draftReply: reply }),
       });
-      if (res.ok) {
-        toast("Draft saved");
-        await loadEvents();
-      } else toast("Failed to save");
+      toast(res.ok ? "Draft saved" : "Failed to save");
+      if (res.ok) await loadEvents();
     }
 
     async function dismissEvent(id) {
@@ -274,10 +252,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "dismissed" }),
       });
-      if (res.ok) {
-        toast("Dismissed");
-        await loadEvents();
-      } else toast("Failed");
+      toast(res.ok ? "Dismissed" : "Failed");
+      if (res.ok) await loadEvents();
     }
 
     async function sendReply(id) {
@@ -294,19 +270,76 @@
         });
         const data = await res.json();
         if (res.ok) {
-          toast("Reply sent");
+          toast("Sent via HeyReach");
           await loadEvents();
         } else {
-          toast(`Failed: ${data.message || data.error || "unknown"}`);
+          toast(data.message || data.error || "Send failed");
           btn.disabled = false;
-          btn.textContent = "Send reply";
+          btn.textContent = "Send via HeyReach";
         }
       } catch (err) {
-        toast(`Error: ${err.message}`);
+        toast(err.message);
         btn.disabled = false;
-        btn.textContent = "Send reply";
+        btn.textContent = "Send via HeyReach";
       }
     }
+
+    async function loadDocuments() {
+      const res = await fetch("/api/documents");
+      const data = await res.json();
+      const list = document.getElementById("docList");
+      const docs = data.documents || [];
+      if (!docs.length) {
+        list.innerHTML = `<p class="text-xs text-slate-400">No documents yet.</p>`;
+        return;
+      }
+      list.innerHTML = docs.map((d) => `
+        <div class="flex justify-between items-center text-sm border border-slate-100 rounded-lg px-3 py-2">
+          <div>
+            <div class="font-medium">${escapeHtml(d.title)}</div>
+            <div class="text-[11px] text-slate-400">${d.chunkCount} chunks · ${fmtTime(d.createdAt)}</div>
+          </div>
+          <button data-doc-id="${escapeHtml(d.id)}" class="delete-doc text-xs text-rose-600 hover:underline">Delete</button>
+        </div>
+      `).join("");
+      list.querySelectorAll(".delete-doc").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Delete this document?")) return;
+          await fetch(`/api/documents?id=${encodeURIComponent(btn.dataset.docId)}`, { method: "DELETE" });
+          await loadDocuments();
+        });
+      });
+    }
+
+    document.getElementById("docForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const title = document.getElementById("docTitle").value;
+      const content = document.getElementById("docContent").value;
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, content }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast("Document added");
+        document.getElementById("docForm").reset();
+        await loadDocuments();
+      } else {
+        toast(data.message || "Failed to add document");
+      }
+    });
+
+    document.getElementById("docsBtn").addEventListener("click", () => {
+      document.getElementById("docsModal").classList.remove("hidden");
+      loadDocuments();
+    });
+    document.getElementById("closeDocs").addEventListener("click", () => {
+      document.getElementById("docsModal").classList.add("hidden");
+    });
+    document.getElementById("docsModal").addEventListener("click", (ev) => {
+      if (ev.target.id === "docsModal") document.getElementById("docsModal").classList.add("hidden");
+    });
 
     document.querySelectorAll(".filter-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -320,7 +353,6 @@
     });
 
     document.getElementById("refreshBtn").addEventListener("click", loadEvents);
-
     loadEvents();
     setInterval(loadEvents, 15000);
   </script>

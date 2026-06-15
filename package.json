@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "HeyReach → OpenAI sentiment → Attio CRM → Slack reminders on Vercel",
+  "description": "HeyReach → sentiment → RAG draft → review → send via HeyReach",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod",
@@ -13,6 +13,8 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.0",
+    "@upstash/vector": "^1.2.3",
     "openai": "^4.104.0"
   },
   "devDependencies": {

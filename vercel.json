@@ -9,11 +9,5 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/check-reminders",
-      "schedule": "0 9 * * *"
-    }
   ]
 }
