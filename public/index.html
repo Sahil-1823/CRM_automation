@@ -22,7 +22,9 @@
       </div>
       <div class="flex gap-2">
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
+        <!-- AI Harness hidden for now
         <button id="harnessBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">AI Harness</button>
+        -->
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge base</button>
         <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
       </div>
@@ -110,7 +112,7 @@
       <div id="kbProjects" class="hidden p-5 overflow-y-auto scrollbar flex-1 space-y-5">
         <p class="text-xs text-slate-500">
           Create projects to give the AI different context and personas per campaign.
-          Documents are assigned to a project; replies use the project's docs and system prompt.
+          Upload documents from your device when creating or editing a project — they are converted to Markdown and used for RAG.
           The AI auto-selects the best project for each incoming lead.
         </p>
 
@@ -124,6 +126,14 @@
             class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"></textarea>
           <textarea id="projectSystemPrompt" rows="3" placeholder="System prompt (optional) — extra context or tone injected into every reply for this project, e.g. 'You represent Acme SaaS. Focus on ROI and time-to-value.'"
             class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"></textarea>
+          <div>
+            <label class="text-xs text-slate-500 block mb-1.5">Documents from your device</label>
+            <label class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:bg-white bg-white">
+              <span id="projectFileLabel" class="text-xs text-slate-500 px-4 text-center">Click to choose .pdf, .docx, .md, .txt, .html, .csv</span>
+              <input id="projectFiles" type="file" accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.csv" multiple class="hidden" />
+            </label>
+            <p class="text-[11px] text-slate-400 mt-1">Files are converted to Markdown and linked to this project when you save.</p>
+          </div>
           <div class="flex gap-2">
             <button id="saveProjectBtn" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex-1">Save project</button>
             <button id="cancelProjectBtn" class="hidden text-sm px-3 py-2 border border-slate-200 rounded-lg hover:bg-slate-100">Cancel</button>
@@ -184,6 +194,50 @@
       el.classList.remove("hidden");
       clearTimeout(toast._t);
       toast._t = setTimeout(() => el.classList.add("hidden"), 3500);
+    }
+
+    async function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function uploadFileToProject(file, projectId) {
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error(`${file.name}: max file size is 5 MB`);
+      }
+      const base64 = await fileToBase64(file);
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          data: base64,
+          projectId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || `Failed to upload ${file.name}`);
+      return data;
+    }
+
+    async function uploadFilesToProject(files, projectId) {
+      let uploaded = 0;
+      for (const file of files) {
+        await uploadFileToProject(file, projectId);
+        uploaded++;
+      }
+      return uploaded;
+    }
+
+    function resetProjectFileInput() {
+      const input = document.getElementById("projectFiles");
+      input.value = "";
+      document.getElementById("projectFileLabel").textContent =
+        "Click to choose .pdf, .docx, .md, .txt, .html, .csv";
     }
 
     function renderThread(conversation) {
@@ -452,6 +506,13 @@
             </div>
           </div>
           ${p.systemPrompt ? `<div class="text-[11px] text-slate-400 border-t border-slate-100 pt-2 line-clamp-2"><span class="font-medium">Prompt:</span> ${escapeHtml(p.systemPrompt)}</div>` : ""}
+          <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
+            <label class="text-xs px-2.5 py-1 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer text-indigo-600">
+              Add documents
+              <input type="file" class="project-card-file hidden" accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.csv" multiple data-project-id="${escapeHtml(p.id)}" />
+            </label>
+            <span class="text-[11px] text-slate-400">Upload files from device</span>
+          </div>
           <div class="text-[11px] text-slate-400">${fmtTime(p.createdAt)}</div>
         </div>
       `).join("");
@@ -475,7 +536,26 @@
           document.getElementById("projectSystemPrompt").value = proj.systemPrompt || "";
           document.getElementById("projectFormTitle").textContent = "Edit project";
           document.getElementById("cancelProjectBtn").classList.remove("hidden");
+          resetProjectFileInput();
           document.getElementById("projectName").focus();
+        });
+      });
+
+      list.querySelectorAll(".project-card-file").forEach((input) => {
+        input.addEventListener("change", async (e) => {
+          const files = Array.from(e.target.files || []);
+          if (!files.length) return;
+          const projectId = input.dataset.projectId;
+          const proj = state.projects.find((p) => p.id === projectId);
+          toast(`Uploading ${files.length} file(s)…`);
+          try {
+            const count = await uploadFilesToProject(files, projectId);
+            toast(`${count} document(s) added to ${proj?.name || "project"}`);
+            input.value = "";
+          } catch (err) {
+            toast(err.message || "Upload failed");
+            input.value = "";
+          }
         });
       });
     }
@@ -501,26 +581,56 @@
       };
       if (!body.name.trim()) { toast("Project name is required"); return; }
 
+      const pendingFiles = Array.from(document.getElementById("projectFiles").files || []);
+      const btn = document.getElementById("saveProjectBtn");
+      btn.disabled = true;
+      btn.textContent = pendingFiles.length ? "Saving & uploading…" : "Saving…";
+
       const url = id ? `/api/projects?id=${encodeURIComponent(id)}` : "/api/projects";
       const method = id ? "PATCH" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast(id ? "Project updated" : "Project created");
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast(data.message || "Failed to save project");
+          return;
+        }
+
+        const projectId = data.project?.id || id;
+        let uploadMsg = id ? "Project updated" : "Project created";
+
+        if (pendingFiles.length && projectId) {
+          const count = await uploadFilesToProject(pendingFiles, projectId);
+          uploadMsg += ` · ${count} document(s) uploaded`;
+        }
+
+        toast(uploadMsg);
         document.getElementById("editProjectId").value = "";
         document.getElementById("projectName").value = "";
         document.getElementById("projectDescription").value = "";
         document.getElementById("projectSystemPrompt").value = "";
         document.getElementById("projectFormTitle").textContent = "New project";
         document.getElementById("cancelProjectBtn").classList.add("hidden");
+        resetProjectFileInput();
         await loadProjects();
-      } else {
-        toast(data.message || "Failed to save project");
+      } catch (err) {
+        toast(err.message || "Failed to save project");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Save project";
       }
+    });
+
+    document.getElementById("projectFiles").addEventListener("change", (e) => {
+      const files = Array.from(e.target.files || []);
+      document.getElementById("projectFileLabel").textContent = files.length
+        ? files.map((f) => `${f.name} (${Math.round(f.size / 1024)} KB)`).join(", ")
+        : "Click to choose .pdf, .docx, .md, .txt, .html, .csv";
     });
 
     document.getElementById("cancelProjectBtn").addEventListener("click", () => {
@@ -530,6 +640,7 @@
       document.getElementById("projectSystemPrompt").value = "";
       document.getElementById("projectFormTitle").textContent = "New project";
       document.getElementById("cancelProjectBtn").classList.add("hidden");
+      resetProjectFileInput();
     });
 
     // ── Documents ─────────────────────────────────────────────────
@@ -731,9 +842,10 @@
       });
     });
 
-    document.getElementById("harnessBtn").addEventListener("click", () => {
-      window.location.href = "/harness.html";
-    });
+    // AI Harness hidden for now
+    // document.getElementById("harnessBtn").addEventListener("click", () => {
+    //   window.location.href = "/harness.html";
+    // });
 
     document.getElementById("refreshBtn").addEventListener("click", loadEvents);
 
