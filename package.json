@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod",
-    "test": "node --test test/**/*.test.js"
+    "test": "node --test test/**/*.test.js",
+    "harness": "node scripts/run-harness.js",
+    "test:webhook": "powershell -ExecutionPolicy Bypass -File scripts/test-webhook.ps1"
   },
   "engines": {
     "node": ">=18"
@@ -15,7 +17,9 @@
   "dependencies": {
     "@upstash/redis": "^1.38.0",
     "@upstash/vector": "^1.2.3",
-    "openai": "^4.104.0"
+    "mammoth": "^1.12.0",
+    "openai": "^4.104.0",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "vercel": "^41.7.0"

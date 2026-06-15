@@ -22,7 +22,8 @@
       </div>
       <div class="flex gap-2">
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
-        <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Documents</button>
+        <button id="harnessBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">AI Harness</button>
+        <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge base</button>
         <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
       </div>
     </header>
@@ -44,31 +45,102 @@
     </div>
   </div>
 
-  <!-- Documents modal -->
+  <!-- Knowledge base modal (Documents + Projects) -->
   <div id="docsModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
-      <div class="px-5 py-4 border-b border-slate-200 flex justify-between items-center">
-        <h2 class="font-semibold">Knowledge base</h2>
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col">
+
+      <!-- Modal header with tab switcher -->
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div class="flex gap-1 text-sm">
+          <button data-kb-tab="documents" class="kb-tab px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium">Documents</button>
+          <button data-kb-tab="projects" class="kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">Projects</button>
+        </div>
         <button id="closeDocs" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
       </div>
-      <div class="p-5 overflow-y-auto scrollbar flex-1 space-y-4">
-        <p class="text-xs text-slate-500">Add product docs, pitch notes, or FAQs. Draft replies use these via RAG.</p>
-        <form id="docForm" class="space-y-2">
-          <input id="docTitle" type="text" placeholder="Document title" required
+
+      <!-- ── DOCUMENTS TAB ── -->
+      <div id="kbDocuments" class="p-5 overflow-y-auto scrollbar flex-1 space-y-4">
+        <p class="text-xs text-slate-500">Upload files from your computer — they are converted to Markdown and used for RAG when drafting replies.</p>
+
+        <!-- Project filter for document list -->
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-slate-500 shrink-0">Filter by project:</label>
+          <select id="docProjectFilter" class="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white flex-1">
+            <option value="">All documents</option>
+          </select>
+        </div>
+
+        <!-- Upload / Paste tab switcher -->
+        <div class="flex gap-1 text-xs border-b border-slate-200 pb-2">
+          <button type="button" data-doc-tab="upload" class="doc-tab px-2.5 py-1 rounded-full bg-slate-900 text-white">Upload file</button>
+          <button type="button" data-doc-tab="paste" class="doc-tab px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Paste text</button>
+        </div>
+
+        <!-- Upload form -->
+        <form id="docUploadForm" class="space-y-3">
+          <input id="docTitleUpload" type="text" placeholder="Title (optional — uses filename)"
             class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-          <textarea id="docContent" rows="5" placeholder="Paste document content…" required
-            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-          <button type="submit" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Add document</button>
+          <select id="docProjectUpload" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-600">
+            <option value="global">No project (global)</option>
+          </select>
+          <label class="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+            <span id="fileLabel" class="text-xs text-slate-500 px-4 text-center">Click to choose .pdf, .docx, .md, .txt, .html, .csv</span>
+            <input id="docFile" type="file" accept=".pdf,.docx,.txt,.md,.markdown,.html,.htm,.csv" class="hidden" />
+          </label>
+          <button type="submit" id="uploadBtn" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 w-full">Upload &amp; convert to Markdown</button>
         </form>
+
+        <!-- Paste form -->
+        <form id="docPasteForm" class="space-y-2 hidden">
+          <input id="docTitlePaste" type="text" placeholder="Document title" required
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <select id="docProjectPaste" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-600">
+            <option value="global">No project (global)</option>
+          </select>
+          <textarea id="docContent" rows="5" placeholder="Paste text (saved as Markdown)…" required
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+          <button type="submit" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Add as Markdown</button>
+        </form>
+
+        <div id="docPreview" class="hidden text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-slate-600"></div>
         <div id="docList" class="space-y-2"></div>
       </div>
+
+      <!-- ── PROJECTS TAB ── -->
+      <div id="kbProjects" class="hidden p-5 overflow-y-auto scrollbar flex-1 space-y-5">
+        <p class="text-xs text-slate-500">
+          Create projects to give the AI different context and personas per campaign.
+          Documents are assigned to a project; replies use the project's docs and system prompt.
+          The AI auto-selects the best project for each incoming lead.
+        </p>
+
+        <!-- Create / edit project form -->
+        <div class="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50">
+          <h3 id="projectFormTitle" class="text-sm font-medium">New project</h3>
+          <input type="hidden" id="editProjectId" value="" />
+          <input id="projectName" type="text" placeholder="Project name *" required
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+          <textarea id="projectDescription" rows="2" placeholder="Description — used by AI to decide which project fits an incoming lead"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"></textarea>
+          <textarea id="projectSystemPrompt" rows="3" placeholder="System prompt (optional) — extra context or tone injected into every reply for this project, e.g. 'You represent Acme SaaS. Focus on ROI and time-to-value.'"
+            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"></textarea>
+          <div class="flex gap-2">
+            <button id="saveProjectBtn" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex-1">Save project</button>
+            <button id="cancelProjectBtn" class="hidden text-sm px-3 py-2 border border-slate-200 rounded-lg hover:bg-slate-100">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Project list -->
+        <div id="projectList" class="space-y-2"></div>
+      </div>
+
     </div>
   </div>
 
-  <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
+  <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50"></div>
 
   <script>
-    const state = { events: [], selectedId: null, filter: "all" };
+    const state = { events: [], selectedId: null, filter: "all", projects: [] };
 
     const escapeHtml = (s) =>
       String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -101,12 +173,17 @@
       return `<span class="text-[11px] px-2 py-0.5 rounded-full ${cls}">${escapeHtml(s?.label || "unknown")}</span>`;
     };
 
+    const projectBadge = (project) => {
+      if (!project?.name) return "";
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Project: ${escapeHtml(project.name)}</span>`;
+    };
+
     function toast(msg) {
       const el = document.getElementById("toast");
       el.textContent = msg;
       el.classList.remove("hidden");
       clearTimeout(toast._t);
-      toast._t = setTimeout(() => el.classList.add("hidden"), 2400);
+      toast._t = setTimeout(() => el.classList.add("hidden"), 3500);
     }
 
     function renderThread(conversation) {
@@ -128,16 +205,23 @@
       }).join("");
     }
 
-    function renderRagSources(sources) {
+    function renderRagSources(sources, citedSources) {
       if (!sources?.length) {
         return `<p class="text-xs text-slate-400">No reference documents matched.</p>`;
       }
-      return sources.map((s) => `
-        <div class="text-xs border border-slate-100 rounded-lg p-2 mb-2 bg-slate-50">
-          <div class="font-medium text-slate-600 mb-1">${escapeHtml(s.title)}</div>
-          <div class="text-slate-500 line-clamp-2">${escapeHtml(s.excerpt)}</div>
-        </div>
-      `).join("");
+      return sources.map((s) => {
+        const cited = citedSources?.includes(s.title);
+        const scorePct = s.score != null ? `${Math.round(s.score * 100)}%` : null;
+        return `
+          <div class="text-xs border rounded-lg p-2 mb-2 ${cited ? "border-indigo-200 bg-indigo-50" : "border-slate-100 bg-slate-50"}">
+            <div class="flex items-center gap-1.5 mb-1">
+              <span class="font-medium text-slate-700">${escapeHtml(s.title)}</span>
+              ${cited ? '<span class="text-[10px] bg-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded font-medium">cited</span>' : ""}
+              ${scorePct ? `<span class="text-[10px] text-slate-400 ml-auto">${scorePct} match</span>` : ""}
+            </div>
+            <div class="text-slate-500 line-clamp-2">${escapeHtml(s.excerpt)}</div>
+          </div>`;
+      }).join("");
     }
 
     async function loadEvents() {
@@ -171,12 +255,13 @@
               <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown")}</span>
               <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(e.createdAt)}</span>
             </div>
-            <div class="flex gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)}</div>
+            <div class="flex flex-wrap gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)}</div>
           </button>`;
       }).join("");
 
       list.querySelectorAll(".event-item").forEach((el) => {
-        el.addEventListener("click", () => {
+        el.addEventListener("click", async () => {
+          if (!state.projects.length) await loadProjects();
           state.selectedId = el.dataset.id;
           renderList();
           const ev = state.events.find((e) => e.id === state.selectedId);
@@ -189,13 +274,25 @@
       const lead = e.lead || {};
       const isPending = e.status === "pending_review";
       const draftReply = e.draft?.reply || "";
+      const selectedProjectId = e.draftProjectId || e.project?.id || "all";
+      const groundingNote = e.draft?.hasGrounding === false && e.draft?.ragSources?.length
+        ? `<p class="text-[11px] text-amber-600 mt-1">AI used general knowledge — retrieved docs were not relevant enough to cite.</p>`
+        : "";
+
+      const projectOptions = [
+        `<option value="all" ${selectedProjectId === "all" ? "selected" : ""}>All projects</option>`,
+        ...state.projects.map(
+          (p) =>
+            `<option value="${escapeHtml(p.id)}" ${selectedProjectId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`,
+        ),
+      ].join("");
 
       document.getElementById("detail").innerHTML = `
         <div class="max-w-2xl mx-auto p-6 space-y-5 fade-in">
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <div class="flex justify-between gap-3">
+            <div class="flex justify-between gap-3 flex-wrap">
               <h2 class="text-xl font-semibold">${escapeHtml(lead.fullName || "Unknown")}</h2>
-              <div class="flex gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)}</div>
+              <div class="flex flex-wrap gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)}</div>
             </div>
             <p class="text-xs text-slate-500 mt-2">${escapeHtml(e.sentiment?.reasoning || "")}</p>
           </div>
@@ -206,12 +303,26 @@
           </div>
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Reference used (RAG)</h3>
-            ${renderRagSources(e.draft?.ragSources)}
+            <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
+              <div class="min-w-[200px] flex-1">
+                <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Project context</label>
+                <select id="chatProjectSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" ${isPending ? "" : "disabled"}>
+                  ${projectOptions}
+                </select>
+                <p class="text-[11px] text-slate-400 mt-1">All projects searches every document. Pick one project to scope RAG to that project + global docs.</p>
+              </div>
+              ${isPending ? `<button id="regenerateBtn" class="text-sm px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 shrink-0">Regenerate draft</button>` : ""}
+            </div>
           </div>
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <div class="flex justify-between mb-3">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Reference used (RAG)</h3>
+            ${renderRagSources(e.draft?.ragSources, e.draft?.citedSources)}
+            ${groundingNote}
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div class="flex justify-between mb-3 gap-2 flex-wrap">
               <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft reply</h3>
               ${e.draft?.rationale ? `<span class="text-[11px] text-slate-400 italic">${escapeHtml(e.draft.rationale)}</span>` : ""}
             </div>
@@ -225,7 +336,7 @@
                 <button id="saveBtn" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-100">Save</button>
                 <button id="sendBtn" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">Send via HeyReach</button>
               </div>
-            ` : e.status === "sent" ? `<p class="text-xs text-emerald-600 mt-2">✓ Sent via HeyReach ${fmtTime(e.sentAt)}</p>` : ""}
+            ` : e.status === "sent" ? `<p class="text-xs text-emerald-600 mt-2">Sent via HeyReach ${fmtTime(e.sentAt)}</p>` : ""}
           </div>
         </div>`;
 
@@ -233,6 +344,33 @@
         document.getElementById("saveBtn").addEventListener("click", () => saveDraft(e.id));
         document.getElementById("sendBtn").addEventListener("click", () => sendReply(e.id));
         document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
+        document.getElementById("regenerateBtn").addEventListener("click", () => regenerateDraft(e.id));
+      }
+    }
+
+    async function regenerateDraft(id) {
+      const projectId = document.getElementById("chatProjectSelect").value || "all";
+      const btn = document.getElementById("regenerateBtn");
+      btn.disabled = true;
+      btn.textContent = "Regenerating…";
+      try {
+        const res = await fetch(`/api/regenerate-draft?id=${encodeURIComponent(id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast(projectId === "all" ? "Draft regenerated (all projects)" : "Draft regenerated for selected project");
+          await loadEvents();
+        } else {
+          toast(data.message || data.error || "Regenerate failed");
+        }
+      } catch (err) {
+        toast(err.message || "Regenerate failed");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Regenerate draft";
       }
     }
 
@@ -285,55 +423,293 @@
       }
     }
 
-    async function loadDocuments() {
-      const res = await fetch("/api/documents");
+    // ── Projects ──────────────────────────────────────────────────
+
+    async function loadProjects() {
+      const res = await fetch("/api/projects");
       const data = await res.json();
-      const list = document.getElementById("docList");
-      const docs = data.documents || [];
-      if (!docs.length) {
-        list.innerHTML = `<p class="text-xs text-slate-400">No documents yet.</p>`;
+      state.projects = data.projects || [];
+      renderProjectList();
+      populateProjectSelectors();
+    }
+
+    function renderProjectList() {
+      const list = document.getElementById("projectList");
+      if (!state.projects.length) {
+        list.innerHTML = `<p class="text-xs text-slate-400">No projects yet. Create one above.</p>`;
         return;
       }
-      list.innerHTML = docs.map((d) => `
-        <div class="flex justify-between items-center text-sm border border-slate-100 rounded-lg px-3 py-2">
-          <div>
-            <div class="font-medium">${escapeHtml(d.title)}</div>
-            <div class="text-[11px] text-slate-400">${d.chunkCount} chunks · ${fmtTime(d.createdAt)}</div>
+      list.innerHTML = state.projects.map((p) => `
+        <div class="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
+          <div class="flex justify-between items-start gap-2">
+            <div class="min-w-0">
+              <div class="font-medium text-sm truncate">${escapeHtml(p.name)}</div>
+              ${p.description ? `<div class="text-xs text-slate-500 mt-0.5 line-clamp-2">${escapeHtml(p.description)}</div>` : ""}
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <button data-edit-id="${escapeHtml(p.id)}" class="edit-project text-xs text-indigo-600 hover:underline">Edit</button>
+              <button data-del-id="${escapeHtml(p.id)}" class="del-project text-xs text-rose-600 hover:underline">Delete</button>
+            </div>
           </div>
-          <button data-doc-id="${escapeHtml(d.id)}" class="delete-doc text-xs text-rose-600 hover:underline">Delete</button>
+          ${p.systemPrompt ? `<div class="text-[11px] text-slate-400 border-t border-slate-100 pt-2 line-clamp-2"><span class="font-medium">Prompt:</span> ${escapeHtml(p.systemPrompt)}</div>` : ""}
+          <div class="text-[11px] text-slate-400">${fmtTime(p.createdAt)}</div>
         </div>
       `).join("");
-      list.querySelectorAll(".delete-doc").forEach((btn) => {
+
+      list.querySelectorAll(".del-project").forEach((btn) => {
         btn.addEventListener("click", async () => {
-          if (!confirm("Delete this document?")) return;
-          await fetch(`/api/documents?id=${encodeURIComponent(btn.dataset.docId)}`, { method: "DELETE" });
-          await loadDocuments();
+          if (!confirm("Delete this project? Documents assigned to it will become global.")) return;
+          const res = await fetch(`/api/projects?id=${encodeURIComponent(btn.dataset.delId)}`, { method: "DELETE" });
+          if (res.ok) { toast("Project deleted"); await loadProjects(); }
+          else { const d = await res.json(); toast(d.message || "Delete failed"); }
+        });
+      });
+
+      list.querySelectorAll(".edit-project").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const proj = state.projects.find((p) => p.id === btn.dataset.editId);
+          if (!proj) return;
+          document.getElementById("editProjectId").value = proj.id;
+          document.getElementById("projectName").value = proj.name;
+          document.getElementById("projectDescription").value = proj.description || "";
+          document.getElementById("projectSystemPrompt").value = proj.systemPrompt || "";
+          document.getElementById("projectFormTitle").textContent = "Edit project";
+          document.getElementById("cancelProjectBtn").classList.remove("hidden");
+          document.getElementById("projectName").focus();
         });
       });
     }
 
-    document.getElementById("docForm").addEventListener("submit", async (ev) => {
+    function populateProjectSelectors() {
+      const opts = state.projects.map(
+        (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`
+      ).join("");
+      const globalOpt = '<option value="global">No project (global)</option>';
+      const allOpt = '<option value="">All documents</option>';
+
+      document.getElementById("docProjectUpload").innerHTML = globalOpt + opts;
+      document.getElementById("docProjectPaste").innerHTML = globalOpt + opts;
+      document.getElementById("docProjectFilter").innerHTML = allOpt + globalOpt + opts;
+    }
+
+    document.getElementById("saveProjectBtn").addEventListener("click", async () => {
+      const id = document.getElementById("editProjectId").value;
+      const body = {
+        name: document.getElementById("projectName").value,
+        description: document.getElementById("projectDescription").value,
+        systemPrompt: document.getElementById("projectSystemPrompt").value,
+      };
+      if (!body.name.trim()) { toast("Project name is required"); return; }
+
+      const url = id ? `/api/projects?id=${encodeURIComponent(id)}` : "/api/projects";
+      const method = id ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast(id ? "Project updated" : "Project created");
+        document.getElementById("editProjectId").value = "";
+        document.getElementById("projectName").value = "";
+        document.getElementById("projectDescription").value = "";
+        document.getElementById("projectSystemPrompt").value = "";
+        document.getElementById("projectFormTitle").textContent = "New project";
+        document.getElementById("cancelProjectBtn").classList.add("hidden");
+        await loadProjects();
+      } else {
+        toast(data.message || "Failed to save project");
+      }
+    });
+
+    document.getElementById("cancelProjectBtn").addEventListener("click", () => {
+      document.getElementById("editProjectId").value = "";
+      document.getElementById("projectName").value = "";
+      document.getElementById("projectDescription").value = "";
+      document.getElementById("projectSystemPrompt").value = "";
+      document.getElementById("projectFormTitle").textContent = "New project";
+      document.getElementById("cancelProjectBtn").classList.add("hidden");
+    });
+
+    // ── Documents ─────────────────────────────────────────────────
+
+    async function loadDocuments() {
+      const res = await fetch("/api/documents");
+      const data = await res.json();
+      const filterVal = document.getElementById("docProjectFilter").value;
+      const list = document.getElementById("docList");
+      let docs = data.documents || [];
+
+      if (filterVal === "global") {
+        docs = docs.filter((d) => !d.projectId || d.projectId === "global");
+      } else if (filterVal) {
+        docs = docs.filter((d) => d.projectId === filterVal);
+      }
+
+      if (!docs.length) {
+        list.innerHTML = `<p class="text-xs text-slate-400">No documents yet.</p>`;
+        return;
+      }
+      list.innerHTML = docs.map((d) => {
+        const projName = state.projects.find((p) => p.id === d.projectId)?.name;
+        return `
+          <div class="text-sm border border-slate-100 rounded-lg px-3 py-2">
+            <div class="flex justify-between items-start gap-2">
+              <div class="min-w-0">
+                <div class="font-medium truncate">${escapeHtml(d.title)}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">
+                  ${d.sourceFilename ? escapeHtml(d.sourceFilename) + " → " : ""}.md
+                  · ${d.chunkCount} chunks
+                  ${projName ? `· <span class="text-violet-600">${escapeHtml(projName)}</span>` : "· global"}
+                  · ${fmtTime(d.createdAt)}
+                </div>
+              </div>
+              <div class="flex gap-2 shrink-0">
+                <button data-preview-id="${escapeHtml(d.id)}" class="preview-doc text-xs text-indigo-600 hover:underline">Preview</button>
+                <button data-doc-id="${escapeHtml(d.id)}" class="delete-doc text-xs text-rose-600 hover:underline">Delete</button>
+              </div>
+            </div>
+          </div>`;
+      }).join("");
+
+      list.querySelectorAll(".delete-doc").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Delete this document?")) return;
+          await fetch(`/api/documents?id=${encodeURIComponent(btn.dataset.docId)}`, { method: "DELETE" });
+          document.getElementById("docPreview").classList.add("hidden");
+          await loadDocuments();
+        });
+      });
+
+      list.querySelectorAll(".preview-doc").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const res = await fetch(`/api/documents?id=${encodeURIComponent(btn.dataset.previewId)}`);
+          const data = await res.json();
+          const el = document.getElementById("docPreview");
+          if (res.ok) {
+            el.textContent = data.markdown?.slice(0, 2000) + (data.markdown?.length > 2000 ? "\n…" : "");
+            el.classList.remove("hidden");
+          } else {
+            toast("Could not load preview");
+          }
+        });
+      });
+    }
+
+    document.getElementById("docProjectFilter").addEventListener("change", loadDocuments);
+
+    document.getElementById("docFile").addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      document.getElementById("fileLabel").textContent = file
+        ? `${file.name} (${Math.round(file.size / 1024)} KB)`
+        : "Click to choose .pdf, .docx, .md, .txt, .html, .csv";
+    });
+
+    document.querySelectorAll(".doc-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const upload = btn.dataset.docTab === "upload";
+        document.getElementById("docUploadForm").classList.toggle("hidden", !upload);
+        document.getElementById("docPasteForm").classList.toggle("hidden", upload);
+        document.querySelectorAll(".doc-tab").forEach((b) => {
+          b.className = "doc-tab px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100";
+        });
+        btn.className = "doc-tab px-2.5 py-1 rounded-full bg-slate-900 text-white";
+      });
+    });
+
+    document.getElementById("docUploadForm").addEventListener("submit", async (ev) => {
       ev.preventDefault();
-      const title = document.getElementById("docTitle").value;
+      const file = document.getElementById("docFile").files?.[0];
+      if (!file) { toast("Choose a file first"); return; }
+      if (file.size > 5 * 1024 * 1024) { toast("Max file size is 5 MB"); return; }
+
+      const btn = document.getElementById("uploadBtn");
+      btn.disabled = true;
+      btn.textContent = "Converting…";
+
+      try {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const res = await fetch("/api/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: document.getElementById("docTitleUpload").value,
+            filename: file.name,
+            data: base64,
+            projectId: document.getElementById("docProjectUpload").value || "global",
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast(`Uploaded as Markdown (${data.document?.chunkCount} chunks)`);
+          document.getElementById("docUploadForm").reset();
+          document.getElementById("fileLabel").textContent = "Click to choose .pdf, .docx, .md, .txt, .html, .csv";
+          if (data.converted?.preview) {
+            const el = document.getElementById("docPreview");
+            el.textContent = data.converted.preview + (data.document?.charCount > 500 ? "…" : "");
+            el.classList.remove("hidden");
+          }
+          await loadDocuments();
+        } else {
+          toast(data.message || "Upload failed");
+        }
+      } catch (err) {
+        toast(err.message || "Upload failed");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Upload & convert to Markdown";
+      }
+    });
+
+    document.getElementById("docPasteForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const title = document.getElementById("docTitlePaste").value;
       const content = document.getElementById("docContent").value;
       const res = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content }),
+        body: JSON.stringify({
+          title,
+          content,
+          projectId: document.getElementById("docProjectPaste").value || "global",
+        }),
       });
       const data = await res.json();
       if (res.ok) {
-        toast("Document added");
-        document.getElementById("docForm").reset();
+        toast("Document added as Markdown");
+        document.getElementById("docPasteForm").reset();
         await loadDocuments();
       } else {
         toast(data.message || "Failed to add document");
       }
     });
 
+    // ── Modal tab switching ────────────────────────────────────────
+
+    document.querySelectorAll(".kb-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.kbTab;
+        document.getElementById("kbDocuments").classList.toggle("hidden", tab !== "documents");
+        document.getElementById("kbProjects").classList.toggle("hidden", tab !== "projects");
+        document.querySelectorAll(".kb-tab").forEach((b) => {
+          b.className = "kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 text-sm";
+        });
+        btn.className = "kb-tab px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium text-sm";
+        if (tab === "projects") loadProjects();
+        if (tab === "documents") loadDocuments();
+      });
+    });
+
     document.getElementById("docsBtn").addEventListener("click", () => {
       document.getElementById("docsModal").classList.remove("hidden");
-      loadDocuments();
+      loadProjects().then(() => loadDocuments());
     });
     document.getElementById("closeDocs").addEventListener("click", () => {
       document.getElementById("docsModal").classList.add("hidden");
@@ -341,6 +717,8 @@
     document.getElementById("docsModal").addEventListener("click", (ev) => {
       if (ev.target.id === "docsModal") document.getElementById("docsModal").classList.add("hidden");
     });
+
+    // ── Event list filters ─────────────────────────────────────────
 
     document.querySelectorAll(".filter-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -353,6 +731,10 @@
       });
     });
 
+    document.getElementById("harnessBtn").addEventListener("click", () => {
+      window.location.href = "/harness.html";
+    });
+
     document.getElementById("refreshBtn").addEventListener("click", loadEvents);
 
     document.getElementById("logoutBtn").addEventListener("click", async () => {
@@ -361,6 +743,7 @@
     });
 
     loadEvents();
+    loadProjects();
     setInterval(loadEvents, 15000);
   </script>
 </body>

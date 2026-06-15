@@ -10,7 +10,7 @@
       "destination": "/login.html"
     },
     {
-      "source": "/((?!api/|login\\.html).*)",
+      "source": "/((?!api/|login\\.html|harness\\.html).*)",
       "destination": "/index.html"
     }
   ]

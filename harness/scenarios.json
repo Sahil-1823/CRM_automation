@@ -1,0 +1,97 @@
+[
+  {
+    "id": "positive-schedule-call",
+    "name": "Lead agrees to schedule a call",
+    "input": {
+      "leadName": "Jane Doe",
+      "companyName": "Acme Inc",
+      "jobTitle": "VP Sales",
+      "yourMessage": "Would you be open to a quick 15-minute call this week to see if we can help?",
+      "replyMessage": "Yes, that sounds good. I'm free Tuesday afternoon."
+    },
+    "expect": {
+      "sentiment": "positive",
+      "replyMinWords": 8,
+      "replyMaxWords": 80
+    }
+  },
+  {
+    "id": "positive-learn-more",
+    "name": "Lead asks to learn more",
+    "input": {
+      "leadName": "Alex Kim",
+      "companyName": "Northwind",
+      "yourMessage": "We help teams automate LinkedIn outreach with better reply handling.",
+      "replyMessage": "Interesting — can you share more about how it works?"
+    },
+    "expect": {
+      "sentiment": "positive",
+      "replyMinWords": 8,
+      "replyMaxWords": 80
+    }
+  },
+  {
+    "id": "negative-not-interested",
+    "name": "Lead declines politely",
+    "input": {
+      "leadName": "Sam Patel",
+      "companyName": "Globex",
+      "yourMessage": "I'd love to show you how we help sales teams book more meetings.",
+      "replyMessage": "Thanks, but we're not looking for anything right now."
+    },
+    "expect": {
+      "sentiment": "negative/neutral",
+      "replyMinWords": 4,
+      "replyMaxWords": 80
+    }
+  },
+  {
+    "id": "negative-unsubscribe",
+    "name": "Lead asks to stop contact",
+    "input": {
+      "leadName": "Chris Lee",
+      "yourMessage": "Following up on my note from last week.",
+      "replyMessage": "Please remove me from your list."
+    },
+    "expect": {
+      "sentiment": "negative/neutral",
+      "replyMinWords": 3,
+      "replyMaxWords": 80
+    }
+  },
+  {
+    "id": "neutral-one-word",
+    "name": "Short non-committal reply",
+    "input": {
+      "leadName": "Taylor Morgan",
+      "yourMessage": "Would a quick demo be useful for your team?",
+      "replyMessage": "Maybe."
+    },
+    "expect": {
+      "sentiment": "negative/neutral",
+      "replyMinWords": 3,
+      "replyMaxWords": 80
+    }
+  },
+  {
+    "id": "thread-with-history",
+    "name": "Multi-message conversation thread",
+    "input": {
+      "leadName": "Jordan Smith",
+      "companyName": "Initech",
+      "yourMessage": "Happy to walk through pricing if helpful.",
+      "replyMessage": "Sure, send me a couple of times for next week.",
+      "conversation": [
+        { "from": "us", "text": "Hi Jordan — we help B2B teams respond to LinkedIn replies faster." },
+        { "from": "lead", "text": "What does pricing look like for a small team?" },
+        { "from": "us", "text": "Happy to walk through pricing if helpful." },
+        { "from": "lead", "text": "Sure, send me a couple of times for next week." }
+      ]
+    },
+    "expect": {
+      "sentiment": "positive",
+      "replyMinWords": 8,
+      "replyMaxWords": 80
+    }
+  }
+]
