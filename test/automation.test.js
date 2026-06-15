@@ -57,3 +57,16 @@ test("parseHeyReachPayload parses message thread when provided", () => {
   assert.equal(parsed.lead.conversation[0].from, "us");
   assert.equal(parsed.lead.conversation[2].text, "Latest reply");
 });
+
+test("parseHeyReachPayload extracts campaign id and name", () => {
+  const parsed = parseHeyReachPayload({
+    lead: { fullName: "Jane Doe" },
+    message: "Interested!",
+    campaignId: 78901,
+    campaign: { id: 78901, name: "Q2 Outbound" },
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.campaignId, 78901);
+  assert.equal(parsed.lead.campaignName, "Q2 Outbound");
+});

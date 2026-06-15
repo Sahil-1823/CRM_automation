@@ -34,6 +34,20 @@ BODY=$(cat <<EOF
   "yourMessage": "Hi, would you be open to a quick chat about our product?",
   "conversationId": "$CONVERSATION_ID",
   "linkedInAccountId": $LINKEDIN_ACCOUNT_ID,
+  "linkedInAccount": {
+    "id": $LINKEDIN_ACCOUNT_ID,
+    "firstName": "Alex",
+    "lastName": "Sales"
+  },
+  "workspace": {
+    "id": "ws-demo-1",
+    "name": "Demo Workspace"
+  },
+  "campaignId": 78901,
+  "campaign": {
+    "id": 78901,
+    "name": "Q2 Outbound"
+  },
   "eventType": "every_message_reply_received"
 }
 EOF

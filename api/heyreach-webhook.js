@@ -5,7 +5,6 @@ import { generateDraftReply } from "../lib/reply.js";
 import { saveEvent } from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
 import { listProjects, selectProject } from "../lib/projects.js";
-import { resolveLinkedInAccount } from "../lib/accounts.js";
 
 function buildConversationContext(lead) {
   const parts = [];
@@ -85,11 +84,28 @@ export default async function handler(req, res) {
     }
 
     const draftProjectId = selectedProject ? selectedProject.id : "all";
-    const linkedInAccount = await resolveLinkedInAccount(parsed.lead.linkedInAccountId);
 
     const record = await saveEvent({
       lead: parsed.lead,
-      linkedInAccount,
+      linkedInAccount: parsed.lead.linkedInAccountId
+        ? {
+            linkedInAccountId: parsed.lead.linkedInAccountId,
+            name: parsed.lead.linkedInAccountName || null,
+          }
+        : null,
+      workspace: parsed.lead.workspaceId
+        ? {
+            id: parsed.lead.workspaceId,
+            name: parsed.lead.workspaceName || null,
+          }
+        : null,
+      campaign:
+        parsed.lead.campaignId || parsed.lead.campaignName
+          ? {
+              id: parsed.lead.campaignId ?? null,
+              name: parsed.lead.campaignName || null,
+            }
+          : null,
       sentiment: {
         label: sentiment.sentiment,
         isPositive: sentiment.isPositive,

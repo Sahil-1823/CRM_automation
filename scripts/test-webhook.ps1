@@ -41,6 +41,20 @@ $body = @{
   yourMessage        = "Hi, would you be open to a quick chat about our product?"
   conversationId     = $ConversationId
   linkedInAccountId  = $LinkedInAccountId
+  linkedInAccount    = @{
+    id        = $LinkedInAccountId
+    firstName = "Alex"
+    lastName  = "Sales"
+  }
+  workspace          = @{
+    id   = "ws-demo-1"
+    name = "Demo Workspace"
+  }
+  campaignId         = 78901
+  campaign           = @{
+    id   = 78901
+    name = "Q2 Outbound"
+  }
   eventType          = "every_message_reply_received"
 } | ConvertTo-Json -Depth 5
 

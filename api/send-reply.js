@@ -2,27 +2,6 @@ import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { getEvent, updateEvent } from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach.js";
 import { requireAuth } from "../lib/auth.js";
-import { getAccount } from "../lib/accounts.js";
-
-function resolveSendAccountId(event, body) {
-  if (body.accountId) {
-    return { accountId: body.accountId, linkedInAccountId: null };
-  }
-  if (body.linkedInAccountId != null && body.linkedInAccountId !== "") {
-    return { accountId: null, linkedInAccountId: Number(body.linkedInAccountId) };
-  }
-  if (event.linkedInAccount?.linkedInAccountId) {
-    return {
-      accountId: event.linkedInAccount.accountId,
-      linkedInAccountId: event.linkedInAccount.linkedInAccountId,
-    };
-  }
-  const leadId = event.lead?.linkedInAccountId;
-  if (leadId != null) {
-    return { accountId: null, linkedInAccountId: Number(leadId) };
-  }
-  return { accountId: null, linkedInAccountId: null };
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -48,20 +27,12 @@ export default async function handler(req, res) {
     }
 
     const lead = event.lead ?? {};
-    const { accountId, linkedInAccountId: bodyAccountId } = resolveSendAccountId(event, body);
-
-    let linkedInAccountId = bodyAccountId;
-    if (accountId) {
-      const account = await getAccount(accountId);
-      if (!account) {
-        return jsonResponse(res, 400, { error: "Selected LinkedIn account not found" });
-      }
-      linkedInAccountId = account.linkedInAccountId;
-    }
+    const linkedInAccountId =
+      lead.linkedInAccountId ?? event.linkedInAccount?.linkedInAccountId ?? null;
 
     if (!linkedInAccountId) {
       return jsonResponse(res, 400, {
-        error: "Select a LinkedIn account before sending",
+        error: "Missing LinkedIn account on this conversation — webhook must include linkedInAccountId",
       });
     }
 

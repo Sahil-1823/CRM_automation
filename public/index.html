@@ -38,6 +38,26 @@
           <button data-filter="sent" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Sent</button>
           <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-full text-slate-600 hover:bg-slate-100">Dismissed</button>
         </div>
+        <div class="px-4 py-2 border-b border-slate-200 space-y-2">
+          <div>
+            <label class="text-[11px] text-slate-500 block mb-1">LinkedIn account</label>
+            <select id="accountFilter" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All LinkedIn accounts</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-500 block mb-1">Workspace</label>
+            <select id="workspaceFilter" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All workspaces</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-500 block mb-1">Campaign</label>
+            <select id="campaignFilter" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All campaigns</option>
+            </select>
+          </div>
+        </div>
         <div id="list" class="flex-1 overflow-y-auto scrollbar"></div>
       </aside>
 
@@ -56,7 +76,6 @@
         <div class="flex gap-1 text-sm">
           <button data-kb-tab="documents" class="kb-tab px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium">Documents</button>
           <button data-kb-tab="projects" class="kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">Projects</button>
-          <button data-kb-tab="accounts" class="kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100">LinkedIn accounts</button>
         </div>
         <button id="closeDocs" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
       </div>
@@ -145,37 +164,24 @@
         <div id="projectList" class="space-y-2"></div>
       </div>
 
-      <!-- ── LINKEDIN ACCOUNTS TAB ── -->
-      <div id="kbAccounts" class="hidden p-5 overflow-y-auto scrollbar flex-1 space-y-5">
-        <p class="text-xs text-slate-500">
-          Register your HeyReach LinkedIn accounts here. Each account needs a display name and the numeric
-          <strong>linkedInAccountId</strong> from HeyReach (visible in webhook payloads or HeyReach dashboard).
-          Use the dropdown in each conversation to choose which account sends the reply.
-        </p>
-
-        <div class="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50">
-          <h3 id="accountFormTitle" class="text-sm font-medium">Add LinkedIn account</h3>
-          <input type="hidden" id="editAccountId" value="" />
-          <input id="accountLabel" type="text" placeholder="Display name * (e.g. John — Sales)"
-            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
-          <input id="accountHeyReachId" type="number" placeholder="HeyReach linkedInAccountId * (numeric)"
-            class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
-          <div class="flex gap-2">
-            <button id="saveAccountBtn" class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex-1">Save account</button>
-            <button id="cancelAccountBtn" class="hidden text-sm px-3 py-2 border border-slate-200 rounded-lg hover:bg-slate-100">Cancel</button>
-          </div>
-        </div>
-
-        <div id="accountList" class="space-y-2"></div>
-      </div>
-
     </div>
   </div>
 
   <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50"></div>
 
   <script>
-    const state = { events: [], selectedId: null, filter: "all", projects: [], accounts: [] };
+    const state = {
+      events: [],
+      selectedId: null,
+      filter: "all",
+      accountFilter: "",
+      workspaceFilter: "",
+      campaignFilter: "",
+      projects: [],
+      heyreachAccounts: [],
+      heyreachWorkspaces: [],
+      heyreachCampaigns: [],
+    };
 
     const escapeHtml = (s) =>
       String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -213,9 +219,89 @@
       return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Project: ${escapeHtml(project.name)}</span>`;
     };
 
-    const accountBadge = (account) => {
-      if (!account?.label) return "";
-      return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">${escapeHtml(account.label)}</span>`;
+    function getEventAccountId(e) {
+      const id = e.lead?.linkedInAccountId ?? e.linkedInAccount?.linkedInAccountId;
+      if (id == null || id === "") return null;
+      return Number(id);
+    }
+
+    function getEventAccountName(e) {
+      const id = getEventAccountId(e);
+      if (id == null) return null;
+      return (
+        e.linkedInAccount?.name ||
+        e.lead?.linkedInAccountName ||
+        state.heyreachAccounts.find((a) => a.id === id)?.name ||
+        null
+      );
+    }
+
+    function formatAccountLabel(id, e = null) {
+      if (id == null) return "Unknown account";
+      const name = e ? getEventAccountName(e) : state.heyreachAccounts.find((a) => a.id === id)?.name;
+      return name || `LinkedIn account ${id}`;
+    }
+
+    function getEventWorkspaceId(e) {
+      const id = e.workspace?.id ?? e.lead?.workspaceId;
+      if (id == null || id === "") return null;
+      return String(id);
+    }
+
+    function getEventWorkspaceName(e) {
+      const id = getEventWorkspaceId(e);
+      if (!id) return null;
+      return (
+        e.workspace?.name ||
+        e.lead?.workspaceName ||
+        state.heyreachWorkspaces.find((w) => w.id === id)?.name ||
+        null
+      );
+    }
+
+    function formatWorkspaceLabel(id, e = null) {
+      if (!id) return "Unknown workspace";
+      const name = e
+        ? getEventWorkspaceName(e)
+        : state.heyreachWorkspaces.find((w) => w.id === id)?.name;
+      return name || `Workspace ${id}`;
+    }
+
+    const accountBadge = (e) => {
+      const id = getEventAccountId(e);
+      if (id == null) return "";
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">${escapeHtml(formatAccountLabel(id, e))}</span>`;
+    };
+
+    const workspaceBadge = (e) => {
+      const id = getEventWorkspaceId(e);
+      if (!id) return "";
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">${escapeHtml(formatWorkspaceLabel(id, e))}</span>`;
+    };
+
+    function getEventCampaignKey(e) {
+      const id = e.campaign?.id ?? e.lead?.campaignId;
+      if (id != null && id !== "") return `id:${Number(id)}`;
+      const name = getEventCampaignName(e);
+      if (name) return `name:${name}`;
+      return null;
+    }
+
+    function getEventCampaignName(e) {
+      const id = e.campaign?.id ?? e.lead?.campaignId;
+      const direct = e.campaign?.name ?? e.lead?.campaignName;
+      if (direct) return direct;
+      if (id != null) {
+        const fromApi = state.heyreachCampaigns.find((c) => c.id === Number(id));
+        return fromApi?.name || null;
+      }
+      return null;
+    }
+
+    const campaignBadge = (e) => {
+      const name = getEventCampaignName(e);
+      if (!name) return "";
+      return `<span class="text-[11px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">${escapeHtml(name)}</span>`;
     };
 
     function toast(msg) {
@@ -308,10 +394,26 @@
       }).join("");
     }
 
+    async function loadHeyReachMeta() {
+      try {
+        const res = await fetch("/api/heyreach-meta");
+        if (!res.ok) return;
+        const data = await res.json();
+        state.heyreachAccounts = data.accounts || [];
+        state.heyreachWorkspaces = data.workspaces || [];
+        state.heyreachCampaigns = data.campaigns || [];
+      } catch {
+        /* non-fatal */
+      }
+    }
+
     async function loadEvents() {
       const res = await fetch("/api/events?limit=200");
       const data = await res.json();
       state.events = data.events || [];
+      populateAccountFilter();
+      populateWorkspaceFilter();
+      populateCampaignFilter();
       renderList();
       if (state.selectedId) {
         const still = state.events.find((e) => e.id === state.selectedId);
@@ -319,14 +421,100 @@
       }
     }
 
+    function populateAccountFilter() {
+      const select = document.getElementById("accountFilter");
+      const current = state.accountFilter;
+      const idSet = new Set(state.heyreachAccounts.map((a) => a.id));
+      for (const e of state.events) {
+        const id = getEventAccountId(e);
+        if (id != null) idSet.add(id);
+      }
+      const ids = [...idSet].sort((a, b) => a - b);
+
+      select.innerHTML =
+        `<option value="">All LinkedIn accounts</option>` +
+        ids
+          .map((id) => {
+            const sample = state.events.find((e) => getEventAccountId(e) === id);
+            return `<option value="${id}" ${String(id) === current ? "selected" : ""}>${escapeHtml(formatAccountLabel(id, sample))}</option>`;
+          })
+          .join("");
+    }
+
+    function populateWorkspaceFilter() {
+      const select = document.getElementById("workspaceFilter");
+      const current = state.workspaceFilter;
+      const idSet = new Set(state.heyreachWorkspaces.map((w) => w.id));
+      for (const e of state.events) {
+        const id = getEventWorkspaceId(e);
+        if (id) idSet.add(id);
+      }
+      const ids = [...idSet].sort();
+
+      select.innerHTML =
+        `<option value="">All workspaces</option>` +
+        ids
+          .map((id) => {
+            const sample = state.events.find((e) => getEventWorkspaceId(e) === id);
+            return `<option value="${escapeHtml(id)}" ${id === current ? "selected" : ""}>${escapeHtml(formatWorkspaceLabel(id, sample))}</option>`;
+          })
+          .join("");
+    }
+
+    function populateCampaignFilter() {
+      const select = document.getElementById("campaignFilter");
+      const current = state.campaignFilter;
+      const keyMap = new Map();
+
+      for (const c of state.heyreachCampaigns) {
+        const key = c.id != null ? `id:${c.id}` : `name:${c.name}`;
+        keyMap.set(key, c.name);
+      }
+      for (const e of state.events) {
+        const key = getEventCampaignKey(e);
+        if (key) keyMap.set(key, getEventCampaignName(e) || key);
+      }
+
+      const entries = [...keyMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+
+      select.innerHTML =
+        `<option value="">All campaigns</option>` +
+        entries
+          .map(
+            ([key, label]) =>
+              `<option value="${escapeHtml(key)}" ${key === current ? "selected" : ""}>${escapeHtml(label)}</option>`,
+          )
+          .join("");
+    }
+
     function renderList() {
       const list = document.getElementById("list");
-      const filtered = state.filter === "all"
-        ? state.events
-        : state.events.filter((e) => e.status === state.filter);
+      let filtered =
+        state.filter === "all"
+          ? state.events
+          : state.events.filter((e) => e.status === state.filter);
 
+      if (state.accountFilter) {
+        filtered = filtered.filter(
+          (e) => String(getEventAccountId(e)) === state.accountFilter,
+        );
+      }
+
+      if (state.workspaceFilter) {
+        filtered = filtered.filter(
+          (e) => getEventWorkspaceId(e) === state.workspaceFilter,
+        );
+      }
+
+      if (state.campaignFilter) {
+        filtered = filtered.filter(
+          (e) => getEventCampaignKey(e) === state.campaignFilter,
+        );
+      }
+
+      const filterActive = state.accountFilter || state.workspaceFilter || state.campaignFilter;
       if (!filtered.length) {
-        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations yet.</div>`;
+        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${filterActive ? " for this filter" : ""}.</div>`;
         return;
       }
 
@@ -339,14 +527,13 @@
               <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown")}</span>
               <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(e.createdAt)}</span>
             </div>
-            <div class="flex flex-wrap gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)} ${accountBadge(e.linkedInAccount)}</div>
+            <div class="flex flex-wrap gap-1.5 mt-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${campaignBadge(e)} ${projectBadge(e.project)} ${accountBadge(e)} ${workspaceBadge(e)}</div>
           </button>`;
       }).join("");
 
       list.querySelectorAll(".event-item").forEach((el) => {
         el.addEventListener("click", async () => {
           if (!state.projects.length) await loadProjects();
-          if (!state.accounts.length) await loadAccounts();
           state.selectedId = el.dataset.id;
           renderList();
           const ev = state.events.find((e) => e.id === state.selectedId);
@@ -355,36 +542,15 @@
       });
     }
 
-    function buildAccountOptions(e) {
-      const selectedId =
-        e.linkedInAccount?.accountId ||
-        state.accounts.find((a) => a.linkedInAccountId === e.lead?.linkedInAccountId)?.id ||
-        "";
-
-      const opts = [`<option value="">— Select LinkedIn account —</option>`];
-      for (const a of state.accounts) {
-        const sel = selectedId === a.id ? "selected" : "";
-        opts.push(
-          `<option value="${escapeHtml(a.id)}" ${sel}>${escapeHtml(a.label)} (ID: ${a.linkedInAccountId})</option>`,
-        );
-      }
-
-      // Webhook account not in configured list
-      const webhookId = e.lead?.linkedInAccountId;
-      if (webhookId && !state.accounts.some((a) => a.linkedInAccountId === webhookId)) {
-        const sel = !selectedId ? "selected" : "";
-        opts.push(
-          `<option value="webhook:${webhookId}" ${sel}>Webhook account (ID: ${webhookId})</option>`,
-        );
-      }
-
-      return opts.join("");
-    }
-
     function renderDetail(e) {
       const lead = e.lead || {};
       const isPending = e.status === "pending_review";
       const draftReply = e.draft?.reply || "";
+      const accountId = getEventAccountId(e);
+      const accountName = getEventAccountName(e);
+      const workspaceId = getEventWorkspaceId(e);
+      const workspaceName = getEventWorkspaceName(e);
+      const campaignName = getEventCampaignName(e);
       const selectedProjectId = e.draftProjectId || e.project?.id || "all";
       const groundingNote = e.draft?.hasGrounding === false && e.draft?.ragSources?.length
         ? `<p class="text-[11px] text-amber-600 mt-1">AI used general knowledge — retrieved docs were not relevant enough to cite.</p>`
@@ -403,9 +569,20 @@
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <div class="flex justify-between gap-3 flex-wrap">
               <h2 class="text-xl font-semibold">${escapeHtml(lead.fullName || "Unknown")}</h2>
-              <div class="flex flex-wrap gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${projectBadge(e.project)} ${accountBadge(e.linkedInAccount)}</div>
+              <div class="flex flex-wrap gap-2">${sentimentBadge(e.sentiment)} ${statusBadge(e.status)} ${campaignBadge(e)} ${projectBadge(e.project)} ${accountBadge(e)} ${workspaceBadge(e)}</div>
             </div>
             <p class="text-xs text-slate-500 mt-2">${escapeHtml(e.sentiment?.reasoning || "")}</p>
+            <div class="flex flex-wrap gap-2 mt-2 text-xs">
+              ${campaignName
+                ? `<span class="text-orange-800 bg-orange-50 px-2 py-1 rounded">Campaign: ${escapeHtml(campaignName)}</span>`
+                : ""}
+              ${accountId != null
+                ? `<span class="text-sky-700 bg-sky-50 px-2 py-1 rounded">From ${escapeHtml(accountName || formatAccountLabel(accountId, e))}</span>`
+                : `<span class="text-amber-600 bg-amber-50 px-2 py-1 rounded">LinkedIn account unknown</span>`}
+              ${workspaceId
+                ? `<span class="text-teal-700 bg-teal-50 px-2 py-1 rounded">Workspace: ${escapeHtml(workspaceName || formatWorkspaceLabel(workspaceId, e))}</span>`
+                : ""}
+            </div>
           </div>
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
@@ -413,18 +590,7 @@
             ${renderThread(lead.conversation)}
           </div>
 
-          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-            <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">LinkedIn account (sender)</label>
-              <select id="chatAccountSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" ${isPending ? "" : "disabled"}>
-                ${buildAccountOptions(e)}
-              </select>
-              <p class="text-[11px] text-slate-400 mt-1">
-                Which HeyReach LinkedIn account this reply is sent from.
-                ${!state.accounts.length ? '<span class="text-amber-600">Add accounts under Knowledge base → LinkedIn accounts.</span>' : ""}
-              </p>
-            </div>
-
+          <div class="bg-white rounded-xl border border-slate-200 p-5">
             <div class="flex flex-wrap items-end justify-between gap-3">
               <div class="min-w-[200px] flex-1">
                 <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Project context</label>
@@ -467,42 +633,7 @@
         document.getElementById("sendBtn").addEventListener("click", () => sendReply(e.id));
         document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
         document.getElementById("regenerateBtn").addEventListener("click", () => regenerateDraft(e.id));
-        document.getElementById("chatAccountSelect").addEventListener("change", () => saveAccountSelection(e.id));
       }
-    }
-
-    async function saveAccountSelection(id) {
-      const raw = document.getElementById("chatAccountSelect").value;
-      if (!raw) return;
-
-      let body;
-      if (raw.startsWith("webhook:")) {
-        body = { linkedInAccountId: Number(raw.slice(8)) };
-      } else {
-        body = { accountId: raw };
-      }
-
-      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        toast("LinkedIn account updated");
-        await loadEvents();
-      } else {
-        const data = await res.json();
-        toast(data.message || "Failed to save account");
-      }
-    }
-
-    function getSelectedAccountPayload() {
-      const raw = document.getElementById("chatAccountSelect")?.value;
-      if (!raw) return {};
-      if (raw.startsWith("webhook:")) {
-        return { linkedInAccountId: Number(raw.slice(8)) };
-      }
-      return { accountId: raw };
     }
 
     async function regenerateDraft(id) {
@@ -556,12 +687,6 @@
       const reply = document.getElementById("replyText").value.trim();
       if (!reply) { toast("Reply is empty"); return; }
 
-      const accountPayload = getSelectedAccountPayload();
-      if (!accountPayload.accountId && !accountPayload.linkedInAccountId) {
-        toast("Select a LinkedIn account before sending");
-        return;
-      }
-
       const btn = document.getElementById("sendBtn");
       btn.disabled = true;
       btn.textContent = "Sending…";
@@ -569,7 +694,7 @@
         const res = await fetch(`/api/send-reply?id=${encodeURIComponent(id)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reply, ...accountPayload }),
+          body: JSON.stringify({ reply }),
         });
         const data = await res.json();
         if (res.ok) {
@@ -586,98 +711,6 @@
         btn.textContent = "Send via HeyReach";
       }
     }
-
-    // ── LinkedIn accounts ─────────────────────────────────────────
-
-    async function loadAccounts() {
-      const res = await fetch("/api/accounts");
-      const data = await res.json();
-      state.accounts = data.accounts || [];
-      renderAccountList();
-    }
-
-    function renderAccountList() {
-      const list = document.getElementById("accountList");
-      if (!list) return;
-      if (!state.accounts.length) {
-        list.innerHTML = `<p class="text-xs text-slate-400">No accounts yet. Add your HeyReach LinkedIn accounts above.</p>`;
-        return;
-      }
-      list.innerHTML = state.accounts.map((a) => `
-        <div class="border border-slate-200 rounded-xl p-4 bg-white">
-          <div class="flex justify-between items-start gap-2">
-            <div class="min-w-0">
-              <div class="font-medium text-sm truncate">${escapeHtml(a.label)}</div>
-              <div class="text-xs text-slate-500 mt-0.5">HeyReach ID: ${a.linkedInAccountId}</div>
-            </div>
-            <div class="flex gap-2 shrink-0">
-              <button data-edit-acct="${escapeHtml(a.id)}" class="edit-account text-xs text-indigo-600 hover:underline">Edit</button>
-              <button data-del-acct="${escapeHtml(a.id)}" class="del-account text-xs text-rose-600 hover:underline">Delete</button>
-            </div>
-          </div>
-          <div class="text-[11px] text-slate-400 mt-2">${fmtTime(a.createdAt)}</div>
-        </div>
-      `).join("");
-
-      list.querySelectorAll(".del-account").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          if (!confirm("Delete this LinkedIn account?")) return;
-          const res = await fetch(`/api/accounts?id=${encodeURIComponent(btn.dataset.delAcct)}`, { method: "DELETE" });
-          if (res.ok) { toast("Account deleted"); await loadAccounts(); }
-          else { const d = await res.json(); toast(d.message || "Delete failed"); }
-        });
-      });
-
-      list.querySelectorAll(".edit-account").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const acct = state.accounts.find((a) => a.id === btn.dataset.editAcct);
-          if (!acct) return;
-          document.getElementById("editAccountId").value = acct.id;
-          document.getElementById("accountLabel").value = acct.label;
-          document.getElementById("accountHeyReachId").value = acct.linkedInAccountId;
-          document.getElementById("accountFormTitle").textContent = "Edit LinkedIn account";
-          document.getElementById("cancelAccountBtn").classList.remove("hidden");
-        });
-      });
-    }
-
-    document.getElementById("saveAccountBtn").addEventListener("click", async () => {
-      const id = document.getElementById("editAccountId").value;
-      const body = {
-        label: document.getElementById("accountLabel").value,
-        linkedInAccountId: document.getElementById("accountHeyReachId").value,
-      };
-      if (!body.label.trim()) { toast("Display name is required"); return; }
-      if (!body.linkedInAccountId) { toast("HeyReach account ID is required"); return; }
-
-      const url = id ? `/api/accounts?id=${encodeURIComponent(id)}` : "/api/accounts";
-      const method = id ? "PATCH" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast(id ? "Account updated" : "Account added");
-        document.getElementById("editAccountId").value = "";
-        document.getElementById("accountLabel").value = "";
-        document.getElementById("accountHeyReachId").value = "";
-        document.getElementById("accountFormTitle").textContent = "Add LinkedIn account";
-        document.getElementById("cancelAccountBtn").classList.add("hidden");
-        await loadAccounts();
-      } else {
-        toast(data.message || "Failed to save account");
-      }
-    });
-
-    document.getElementById("cancelAccountBtn").addEventListener("click", () => {
-      document.getElementById("editAccountId").value = "";
-      document.getElementById("accountLabel").value = "";
-      document.getElementById("accountHeyReachId").value = "";
-      document.getElementById("accountFormTitle").textContent = "Add LinkedIn account";
-      document.getElementById("cancelAccountBtn").classList.add("hidden");
-    });
 
     // ── Projects ──────────────────────────────────────────────────
 
@@ -1011,20 +1044,18 @@
         const tab = btn.dataset.kbTab;
         document.getElementById("kbDocuments").classList.toggle("hidden", tab !== "documents");
         document.getElementById("kbProjects").classList.toggle("hidden", tab !== "projects");
-        document.getElementById("kbAccounts").classList.toggle("hidden", tab !== "accounts");
         document.querySelectorAll(".kb-tab").forEach((b) => {
           b.className = "kb-tab px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 text-sm";
         });
         btn.className = "kb-tab px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium text-sm";
         if (tab === "projects") loadProjects();
         if (tab === "documents") loadDocuments();
-        if (tab === "accounts") loadAccounts();
       });
     });
 
     document.getElementById("docsBtn").addEventListener("click", () => {
       document.getElementById("docsModal").classList.remove("hidden");
-      Promise.all([loadProjects(), loadAccounts()]).then(() => loadDocuments());
+      loadProjects().then(() => loadDocuments());
     });
     document.getElementById("closeDocs").addEventListener("click", () => {
       document.getElementById("docsModal").classList.add("hidden");
@@ -1034,6 +1065,21 @@
     });
 
     // ── Event list filters ─────────────────────────────────────────
+
+    document.getElementById("accountFilter").addEventListener("change", (e) => {
+      state.accountFilter = e.target.value;
+      renderList();
+    });
+
+    document.getElementById("workspaceFilter").addEventListener("change", (e) => {
+      state.workspaceFilter = e.target.value;
+      renderList();
+    });
+
+    document.getElementById("campaignFilter").addEventListener("change", (e) => {
+      state.campaignFilter = e.target.value;
+      renderList();
+    });
 
     document.querySelectorAll(".filter-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1058,10 +1104,11 @@
       window.location.href = "/login.html";
     });
 
-    loadEvents();
+    loadHeyReachMeta().then(() => loadEvents());
     loadProjects();
-    loadAccounts();
-    setInterval(loadEvents, 15000);
+    setInterval(() => {
+      loadHeyReachMeta().then(() => loadEvents());
+    }, 15000);
   </script>
 </body>
 </html>
