@@ -40,7 +40,7 @@
       "replyMessage": "Thanks, but we're not looking for anything right now."
     },
     "expect": {
-      "sentiment": "negative/neutral",
+      "sentiment": "negative",
       "replyMinWords": 4,
       "replyMaxWords": 80
     }
@@ -54,7 +54,7 @@
       "replyMessage": "Please remove me from your list."
     },
     "expect": {
-      "sentiment": "negative/neutral",
+      "sentiment": "negative",
       "replyMinWords": 3,
       "replyMaxWords": 80
     }
@@ -68,7 +68,7 @@
       "replyMessage": "Maybe."
     },
     "expect": {
-      "sentiment": "negative/neutral",
+      "sentiment": "neutral",
       "replyMinWords": 3,
       "replyMaxWords": 80
     }

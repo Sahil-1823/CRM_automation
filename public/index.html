@@ -233,7 +233,11 @@
 
     const sentimentBadge = (s) => {
       if (!s?.label) return "";
-      return `<span class="${tagClass}">${escapeHtml(s.label)}</span>`;
+      const label =
+        s.label === "negative/neutral"
+          ? "neutral"
+          : s.label.charAt(0).toUpperCase() + s.label.slice(1);
+      return `<span class="${tagClass}">${escapeHtml(label)}</span>`;
     };
 
     const projectBadge = (project) => {
@@ -370,10 +374,7 @@
       const lead = e?.lead || {};
       const yourMessage = lead.yourMessage || "";
       const replyMessage = lead.replyMessage || "";
-      const sentReply =
-        e?.status === "sent"
-          ? e?.sendResult?.reply || e?.draft?.reply || ""
-          : "";
+      const sentReply = e?.sendResult?.reply || "";
 
       const thread = [];
       const hints = { yourMessage, replyMessage, sentReply };
@@ -666,6 +667,7 @@
         : "";
 
       const projectOptions = [
+        `<option value="none" ${selectedProjectId === "none" ? "selected" : ""}>None (no RAG context)</option>`,
         `<option value="all" ${selectedProjectId === "all" ? "selected" : ""}>All projects</option>`,
         ...state.projects.map(
           (p) =>
@@ -700,7 +702,7 @@
                 <select id="chatProjectSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" ${isPending ? "" : "disabled"}>
                   ${projectOptions}
                 </select>
-                <p class="text-[11px] text-slate-400 mt-1">All projects searches every document. Pick one project to scope RAG.</p>
+                <p class="text-[11px] text-slate-400 mt-1">None skips knowledge-base context. All projects searches every document.</p>
               </div>
               ${isPending ? `<button id="regenerateBtn" class="text-sm px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 shrink-0">Regenerate draft</button>` : ""}
             </div>
@@ -754,7 +756,13 @@
         });
         const data = await res.json();
         if (res.ok) {
-          toast(projectId === "all" ? "Draft regenerated (all projects)" : "Draft regenerated for selected project");
+          const toastMsg =
+            projectId === "none"
+              ? "Draft regenerated (no RAG context)"
+              : projectId === "all"
+                ? "Draft regenerated (all projects)"
+                : "Draft regenerated for selected project";
+          toast(toastMsg);
           await loadEvents();
         } else {
           toast(data.message || data.error || "Regenerate failed");

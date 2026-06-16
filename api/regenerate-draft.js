@@ -25,11 +25,15 @@ export default async function handler(req, res) {
     const projectId = body.projectId === undefined ? event.draftProjectId ?? "all" : body.projectId;
 
     let project = null;
-    if (projectId && projectId !== "all") {
+    let projectScope = "all";
+    if (projectId === "none") {
+      projectScope = "none";
+    } else if (projectId && projectId !== "all") {
       project = await getProject(projectId);
       if (!project) {
         return jsonResponse(res, 400, { error: `Project not found: ${projectId}` });
       }
+      projectScope = "project";
     }
 
     const lead = event.lead || {};
@@ -45,14 +49,18 @@ export default async function handler(req, res) {
       isPositive: sentiment.isPositive,
       conversation: lead.conversation,
       project,
-      projectScope: projectId === "all" || !projectId ? "all" : "project",
+      projectScope,
     });
 
     const updated = await updateEvent(id, {
-      draftProjectId: projectId === "all" || !projectId ? "all" : projectId,
-      project: project
-        ? { id: project.id, name: project.name, source: "manual" }
-        : { id: null, name: "All projects", source: "manual" },
+      draftProjectId:
+        projectId === "none" ? "none" : projectId === "all" || !projectId ? "all" : projectId,
+      project:
+        projectId === "none"
+          ? { id: null, name: "None", source: "manual" }
+          : project
+            ? { id: project.id, name: project.name, source: "manual" }
+            : { id: null, name: "All projects", source: "manual" },
       draft: {
         ...draftFromGeneration(draft),
       },

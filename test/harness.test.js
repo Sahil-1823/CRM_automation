@@ -19,7 +19,7 @@ test("evaluateResult passes when expectations match", () => {
 
 test("evaluateResult fails on sentiment mismatch", () => {
   const result = {
-    sentiment: { sentiment: "negative/neutral" },
+    sentiment: { sentiment: "negative" },
     draft: { reply: "Understood, thanks for letting me know." },
   };
   const evaluation = evaluateResult(result, { sentiment: "positive" });

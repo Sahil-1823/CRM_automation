@@ -31,14 +31,15 @@ test("enrichDisplayThread appends sent reply", () => {
   assert.equal(thread.at(-1).text, "Great, how about Tuesday?");
 });
 
-test("conversationFromEvent includes sent message after send", () => {
+test("conversationFromEvent includes sent message from HeyReach send", () => {
   const thread = conversationFromEvent({
     status: "sent",
     sendResult: { reply: "Thanks, talk soon." },
     lead: {
-      yourMessage: "Quick intro",
-      replyMessage: "Sounds good",
-      conversation: [{ from: "lead", text: "Sounds good" }],
+      conversation: [
+        { from: "us", text: "Hello" },
+        { from: "lead", text: "Interested" },
+      ],
     },
   });
 
