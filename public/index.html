@@ -382,23 +382,56 @@
       }).join("");
     }
 
-    function renderRagSources(sources, citedSources) {
+    function renderRagPanel(sources, citedSources) {
       if (!sources?.length) {
-        return `<p class="text-xs text-slate-400">No reference documents matched.</p>`;
+        return `<p class="text-xs text-slate-400">No reference documents matched. Upload docs in Knowledge base, then Regenerate draft.</p>`;
       }
-      return sources.map((s) => {
+
+      const options = sources
+        .map((s, i) => {
+          const cited = citedSources?.includes(s.title);
+          const scorePct = s.score != null ? ` · ${Math.round(s.score * 100)}% match` : "";
+          const citedLabel = cited ? " · cited" : "";
+          return `<option value="${i}">${escapeHtml(s.title)}${scorePct}${citedLabel}</option>`;
+        })
+        .join("");
+
+      return `
+        <label class="text-[11px] text-slate-500 block mb-1.5">Select reference</label>
+        <select id="ragSourceSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white mb-3 focus:outline-none focus:ring-1 focus:ring-slate-400">
+          ${options}
+        </select>
+        <div id="ragSourceDetail" class="text-xs border rounded-lg p-3 border-slate-200 bg-slate-50">
+          <div class="flex items-center gap-2 mb-2">
+            <span id="ragSourceTitle" class="font-medium text-slate-700"></span>
+            <span id="ragSourceCited" class="hidden text-[10px] border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">cited in draft</span>
+            <span id="ragSourceScore" class="text-[10px] text-slate-400 ml-auto"></span>
+          </div>
+          <div id="ragSourceExcerpt" class="text-slate-600 whitespace-pre-wrap text-sm leading-relaxed"></div>
+        </div>`;
+    }
+
+    function wireRagDropdown(sources, citedSources) {
+      const select = document.getElementById("ragSourceSelect");
+      if (!select || !sources?.length) return;
+
+      const titleEl = document.getElementById("ragSourceTitle");
+      const citedEl = document.getElementById("ragSourceCited");
+      const scoreEl = document.getElementById("ragSourceScore");
+      const excerptEl = document.getElementById("ragSourceExcerpt");
+
+      const update = () => {
+        const s = sources[Number(select.value)] || sources[0];
+        if (!s) return;
+        titleEl.textContent = s.title || "";
         const cited = citedSources?.includes(s.title);
-        const scorePct = s.score != null ? `${Math.round(s.score * 100)}%` : null;
-        return `
-          <div class="text-xs border rounded-lg p-2 mb-2 border-slate-200 bg-white">
-            <div class="flex items-center gap-1.5 mb-1">
-              <span class="font-medium text-slate-700">${escapeHtml(s.title)}</span>
-              ${cited ? `<span class="text-[10px] border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">cited</span>` : ""}
-              ${scorePct ? `<span class="text-[10px] text-slate-400 ml-auto">${scorePct} match</span>` : ""}
-            </div>
-            <div class="text-slate-500 line-clamp-2">${escapeHtml(s.excerpt)}</div>
-          </div>`;
-      }).join("");
+        citedEl.classList.toggle("hidden", !cited);
+        scoreEl.textContent = s.score != null ? `${Math.round(s.score * 100)}% match` : "";
+        excerptEl.textContent = s.excerpt || "";
+      };
+
+      select.addEventListener("change", update);
+      update();
     }
 
     async function loadHeyReachMeta() {
@@ -487,7 +520,10 @@
 
       const filterActive = state.accountFilter || state.campaignFilter;
       if (!filtered.length) {
-        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${filterActive ? " for this filter" : ""}.</div>`;
+        const hint = filterActive
+          ? " Clear LinkedIn account and Campaign filters above the chat panel."
+          : "";
+        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${filterActive ? " for this filter" : ""}.${hint}</div>`;
         return;
       }
 
@@ -571,7 +607,7 @@
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Reference used (RAG)</h3>
-            ${renderRagSources(e.draft?.ragSources, e.draft?.citedSources)}
+            ${renderRagPanel(e.draft?.ragSources, e.draft?.citedSources)}
             ${groundingNote}
           </div>
 
@@ -601,6 +637,8 @@
         document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
         document.getElementById("regenerateBtn").addEventListener("click", () => regenerateDraft(e.id));
       }
+
+      wireRagDropdown(e.draft?.ragSources, e.draft?.citedSources);
     }
 
     async function regenerateDraft(id) {

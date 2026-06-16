@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseHeyReachPayload, formatHeyReachMessageType } from "../lib/heyreach.js";
+import { parseHeyReachPayload, formatHeyReachMessageType, verifyHeyReachSecret } from "../lib/heyreach.js";
 import { isFilterableCampaignStatus } from "../lib/heyreach-meta.js";
 
 test("parseHeyReachPayload accepts common HeyReach shapes", () => {
@@ -93,4 +93,36 @@ test("isFilterableCampaignStatus excludes completed campaigns", () => {
   assert.equal(isFilterableCampaignStatus("PAUSED"), true);
   assert.equal(isFilterableCampaignStatus("FINISHED"), false);
   assert.equal(isFilterableCampaignStatus("COMPLETED"), false);
+});
+
+test("verifyHeyReachSecret accepts Authorization Bearer and custom headers", () => {
+  const secret = "my-secret-token";
+  assert.equal(
+    verifyHeyReachSecret(
+      { headers: { authorization: "Bearer my-secret-token" } },
+      secret,
+    ),
+    true,
+  );
+  assert.equal(
+    verifyHeyReachSecret(
+      { headers: { heyreach_webhook_secret: "Bearer my-secret-token" } },
+      secret,
+    ),
+    true,
+  );
+  assert.equal(
+    verifyHeyReachSecret(
+      { headers: { authorization: "Bearer wrong" } },
+      secret,
+    ),
+    false,
+  );
+  assert.equal(
+    verifyHeyReachSecret(
+      { headers: { authorization: "Bearer my-secret-token" } },
+      "Bearer my-secret-token",
+    ),
+    true,
+  );
 });
