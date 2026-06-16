@@ -2,6 +2,7 @@ import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { getEvent, updateEvent } from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach.js";
 import { requireAuth } from "../lib/auth.js";
+import { enrichDisplayThread } from "../lib/conversation.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -42,11 +43,19 @@ export default async function handler(req, res) {
       message: replyText,
     });
 
+    const conversation = enrichDisplayThread({
+      conversation: lead.conversation,
+      yourMessage: lead.yourMessage,
+      replyMessage: lead.replyMessage,
+      sentReply: replyText,
+    });
+
     const updated = await updateEvent(id, {
       status: "sent",
       sentAt: new Date().toISOString(),
       sendResult: { reply: replyText, heyreach: heyReachResult, linkedInAccountId },
       draft: { ...(event.draft || {}), reply: replyText },
+      lead: { ...lead, conversation },
     });
 
     return jsonResponse(res, 200, { ok: true, event: updated });

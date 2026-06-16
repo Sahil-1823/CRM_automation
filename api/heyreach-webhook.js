@@ -8,32 +8,11 @@ import {
 } from "../lib/draft-pipeline.js";
 import { saveEvent, findEventByConversationId, updateEvent } from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
-
-function normalizeThreadMessage(msg) {
-  if (!msg || typeof msg !== "object") return null;
-  const from = msg.from === "lead" || msg.from === "us" ? msg.from : "unknown";
-  const text = typeof msg.text === "string" ? msg.text.trim() : "";
-  if (!text) return null;
-  return { from, text };
-}
-
-function mergeConversationHistory(previous, incoming) {
-  const prior = Array.isArray(previous) ? previous.map(normalizeThreadMessage).filter(Boolean) : [];
-  const next = Array.isArray(incoming) ? incoming.map(normalizeThreadMessage).filter(Boolean) : [];
-  if (!prior.length) return next;
-  if (!next.length) return prior;
-
-  const merged = [...prior];
-  const seen = new Set(prior.map((m) => `${m.from}::${m.text}`));
-  for (const msg of next) {
-    const key = `${msg.from}::${msg.text}`;
-    if (!seen.has(key)) {
-      merged.push(msg);
-      seen.add(key);
-    }
-  }
-  return merged;
-}
+import {
+  mergeConversationHistory,
+  enrichDisplayThread,
+  conversationFromEvent,
+} from "../lib/conversation.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -61,10 +40,18 @@ export default async function handler(req, res) {
     const latestInConversation = conversationId
       ? await findEventByConversationId(conversationId)
       : null;
-    const mergedConversation = mergeConversationHistory(
-      latestInConversation?.lead?.conversation,
-      parsed.lead.conversation,
-    );
+    const priorThread = latestInConversation
+      ? conversationFromEvent(latestInConversation)
+      : [];
+    const mergedConversation = enrichDisplayThread({
+      conversation: mergeConversationHistory(priorThread, parsed.lead.conversation),
+      yourMessage: parsed.lead.yourMessage,
+      replyMessage: parsed.lead.replyMessage,
+      sentReply:
+        latestInConversation?.status === "sent"
+          ? latestInConversation.sendResult?.reply || ""
+          : "",
+    });
     const leadWithHistory = {
       ...parsed.lead,
       conversation: mergedConversation,

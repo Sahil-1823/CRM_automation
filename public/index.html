@@ -11,6 +11,8 @@
     .scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
     .fade-in { animation: fade 0.18s ease-out; }
     @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
@@ -364,28 +366,97 @@
         "Click to choose .pdf, .docx, .md, .txt, .html, .csv";
     }
 
+    function conversationFromEvent(e) {
+      const lead = e?.lead || {};
+      const sentReply =
+        e?.status === "sent"
+          ? e?.sendResult?.reply || e?.draft?.reply || ""
+          : "";
+
+      const thread = [];
+      const seen = new Set();
+      const add = (from, text) => {
+        const trimmed = String(text || "").trim();
+        if (!trimmed) return;
+        const key = `${from}::${trimmed}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        thread.push({ from, text: trimmed });
+      };
+
+      for (const msg of lead.conversation || []) {
+        if (!msg?.text) continue;
+        const from = msg.from === "lead" || msg.from === "us" ? msg.from : "unknown";
+        add(from, msg.text);
+      }
+
+      const your = lead.yourMessage?.trim() || "";
+      const reply = lead.replyMessage?.trim() || "";
+
+      if (!thread.length) {
+        if (your) add("us", your);
+        if (reply) add("lead", reply);
+      } else {
+        if (your && !thread.some((m) => m.from === "us" && m.text === your)) {
+          const firstLead = thread.findIndex((m) => m.from === "lead");
+          if (firstLead >= 0) thread.splice(firstLead, 0, { from: "us", text: your });
+          else add("us", your);
+        }
+        if (reply && !thread.some((m) => m.from === "lead" && m.text === reply)) {
+          add("lead", reply);
+        }
+      }
+
+      if (sentReply) add("us", sentReply);
+      return thread;
+    }
+
     function renderThread(conversation) {
       if (!conversation?.length) {
         return `<p class="text-sm text-slate-400">No conversation history available.</p>`;
       }
-      return conversation.map((msg) => {
-        const isLead = msg.from === "lead";
-        const isUs = msg.from === "us";
-        const label = isLead ? "Lead" : isUs ? "You" : "Message";
-        const bubble = isLead
-          ? "bg-white border-slate-200 mr-8"
-          : isUs ? "bg-white border-slate-200 ml-8" : "bg-slate-50 border-slate-200";
-        return `
-          <div class="mb-3">
-            <div class="text-[11px] text-slate-400 mb-1">${escapeHtml(label)}</div>
-            <div class="border rounded-lg p-3 text-sm whitespace-pre-wrap ${bubble}">${escapeHtml(msg.text)}</div>
-          </div>`;
-      }).join("");
+
+      return `
+        <div class="flex flex-col gap-3 max-h-[28rem] overflow-y-auto scrollbar pr-1">
+          ${conversation.map((msg) => {
+            const isLead = msg.from === "lead";
+            const isUs = msg.from === "us";
+            const align = isUs ? "justify-end" : "justify-start";
+            const bubble = isUs
+              ? "bg-slate-900 text-white rounded-2xl rounded-br-md"
+              : isLead
+                ? "bg-slate-100 text-slate-900 border border-slate-200 rounded-2xl rounded-bl-md"
+                : "bg-amber-50 text-slate-800 border border-amber-200 rounded-2xl";
+            const label = isLead ? "Lead" : isUs ? "You" : "Message";
+            const labelClass = isUs ? "text-right" : "text-left";
+            return `
+              <div class="flex ${align}">
+                <div class="max-w-[85%]">
+                  <div class="text-[10px] text-slate-400 mb-1 px-1 ${labelClass}">${escapeHtml(label)}</div>
+                  <div class="px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${bubble}">${escapeHtml(msg.text)}</div>
+                </div>
+              </div>`;
+          }).join("")}
+        </div>`;
     }
 
     function renderRagPanel(sources, citedSources) {
+      const count = sources?.length || 0;
+      const summary = count
+        ? `${count} reference${count === 1 ? "" : "s"}`
+        : "No references matched";
+
       if (!sources?.length) {
-        return `<p class="text-xs text-slate-400">No reference documents matched. Upload docs in Knowledge base, then Regenerate draft.</p>`;
+        return `
+          <details class="group">
+            <summary class="cursor-pointer text-sm font-medium text-slate-700 list-none flex items-center justify-between gap-2">
+              <span>Reference used (RAG)</span>
+              <span class="text-xs text-slate-400 font-normal">${summary}</span>
+            </summary>
+            <div class="mt-3">
+              <p class="text-xs text-slate-400">No reference documents matched. Upload docs in Knowledge base, then Regenerate draft.</p>
+            </div>
+          </details>`;
       }
 
       const options = sources
@@ -398,18 +469,26 @@
         .join("");
 
       return `
-        <label class="text-[11px] text-slate-500 block mb-1.5">Select reference</label>
-        <select id="ragSourceSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white mb-3 focus:outline-none focus:ring-1 focus:ring-slate-400">
-          ${options}
-        </select>
-        <div id="ragSourceDetail" class="text-xs border rounded-lg p-3 border-slate-200 bg-slate-50">
-          <div class="flex items-center gap-2 mb-2">
-            <span id="ragSourceTitle" class="font-medium text-slate-700"></span>
-            <span id="ragSourceCited" class="hidden text-[10px] border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">cited in draft</span>
-            <span id="ragSourceScore" class="text-[10px] text-slate-400 ml-auto"></span>
+        <details class="group">
+          <summary class="cursor-pointer text-sm font-medium text-slate-700 list-none flex items-center justify-between gap-2">
+            <span>Reference used (RAG)</span>
+            <span class="text-xs text-slate-400 font-normal">${summary}</span>
+          </summary>
+          <div class="mt-3">
+            <label class="text-[11px] text-slate-500 block mb-1.5">Select reference</label>
+            <select id="ragSourceSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white mb-3 focus:outline-none focus:ring-1 focus:ring-slate-400">
+              ${options}
+            </select>
+            <div id="ragSourceDetail" class="text-xs border rounded-lg p-3 border-slate-200 bg-slate-50">
+              <div class="flex items-center gap-2 mb-2">
+                <span id="ragSourceTitle" class="font-medium text-slate-700"></span>
+                <span id="ragSourceCited" class="hidden text-[10px] border border-slate-200 px-1.5 py-0.5 rounded text-slate-500">cited in draft</span>
+                <span id="ragSourceScore" class="text-[10px] text-slate-400 ml-auto"></span>
+              </div>
+              <div id="ragSourceExcerpt" class="text-slate-600 whitespace-pre-wrap text-sm leading-relaxed"></div>
+            </div>
           </div>
-          <div id="ragSourceExcerpt" class="text-slate-600 whitespace-pre-wrap text-sm leading-relaxed"></div>
-        </div>`;
+        </details>`;
     }
 
     function wireRagDropdown(sources, citedSources) {
@@ -590,7 +669,7 @@
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">Conversation</h3>
-            ${renderThread(lead.conversation)}
+            ${renderThread(conversationFromEvent(e))}
           </div>
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
@@ -607,7 +686,6 @@
           </div>
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Reference used (RAG)</h3>
             ${renderRagPanel(e.draft?.ragSources, e.draft?.citedSources)}
             ${groundingNote}
           </div>
@@ -705,7 +783,16 @@
         const data = await res.json();
         if (res.ok) {
           toast("Sent via HeyReach");
-          await loadEvents();
+          const updated = data.event;
+          if (updated) {
+            const idx = state.events.findIndex((ev) => ev.id === id);
+            if (idx >= 0) state.events[idx] = updated;
+            state.selectedId = id;
+            renderList();
+            renderDetail(updated);
+          } else {
+            await loadEvents();
+          }
         } else {
           toast(data.message || data.error || "Send failed");
           btn.disabled = false;
