@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseHeyReachPayload, formatHeyReachMessageType, verifyHeyReachSecret } from "../lib/heyreach.js";
+import {
+  parseHeyReachPayload,
+  formatHeyReachMessageType,
+  verifyHeyReachSecret,
+  parseChatroomToThread,
+  mergeIncomingThreads,
+} from "../lib/heyreach.js";
 import { isFilterableCampaignStatus } from "../lib/heyreach-meta.js";
 
 test("parseHeyReachPayload accepts common HeyReach shapes", () => {
@@ -133,6 +139,58 @@ test("parseHeyReachPayload derives reply from last recent_message when direction
 
   assert.equal(parsed.valid, true);
   assert.equal(parsed.lead.replyMessage, "Tell me more.");
+});
+
+test("parseHeyReachPayload reads recent_messages nested under lead", () => {
+  const parsed = parseHeyReachPayload({
+    conversation_id: "conv-nested",
+    sender: { id: 222 },
+    lead: {
+      first_name: "Jane",
+      last_name: "Doe",
+      recent_messages: [
+        { text: "Hi Jane, interested in a call?", direction: "outbound" },
+        { text: "Sure, tell me more.", direction: "inbound" },
+        { text: "Here are the details.", direction: "outbound" },
+        { text: "Sounds good!", direction: "inbound" },
+      ],
+    },
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.conversation.length, 4);
+  assert.equal(parsed.lead.conversation[0].from, "us");
+  assert.equal(parsed.lead.conversation[3].from, "lead");
+});
+
+test("parseChatroomToThread maps HeyReach inbox API messages", () => {
+  const thread = parseChatroomToThread({
+    messages: [
+      { text: "Hello", isIncoming: false, sentAt: "2026-06-10T10:00:00.000Z" },
+      { text: "Interested", isIncoming: true, sentAt: "2026-06-10T11:00:00.000Z" },
+      { text: "Great, Tuesday?", isIncoming: false, sentAt: "2026-06-10T12:00:00.000Z" },
+    ],
+  });
+
+  assert.equal(thread.length, 3);
+  assert.equal(thread[0].from, "us");
+  assert.equal(thread[1].from, "lead");
+  assert.equal(thread[2].at, "2026-06-10T12:00:00.000Z");
+});
+
+test("mergeIncomingThreads prefers full API history over sparse webhook", () => {
+  const merged = mergeIncomingThreads(
+    [{ from: "lead", text: "Latest only" }],
+    [
+      { from: "us", text: "Hello" },
+      { from: "lead", text: "Interested" },
+      { from: "lead", text: "Latest only" },
+    ],
+  );
+
+  assert.equal(merged.length, 3);
+  assert.equal(merged[0].text, "Hello");
+  assert.equal(merged.at(-1).text, "Latest only");
 });
 
 test("formatHeyReachMessageType humanizes webhook types", () => {

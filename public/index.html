@@ -386,11 +386,28 @@
 
     function conversationFromEvent(e) {
       const lead = e?.lead || {};
+      const stored = (lead.conversation || []).filter((m) => m?.text?.trim());
+
+      // Stored thread is authoritative — avoids re-merging that can hide history.
+      if (stored.length) {
+        const thread = stored.map((m) => ({
+          from: m.from === "lead" || m.from === "us" ? m.from : "unknown",
+          text: String(m.text).trim(),
+          ...(m.at ? { at: m.at } : {}),
+        }));
+
+        const sentReply = (e?.sendResult?.reply || "").trim();
+        const sentAt = e?.sentAt || e?.sendResult?.sentAt || "";
+        if (sentReply && !thread.some((m) => m.text === sentReply)) {
+          thread.push({ from: "us", text: sentReply, ...(sentAt ? { at: sentAt } : {}) });
+        }
+        return thread;
+      }
+
       const yourMessage = lead.yourMessage || "";
       const replyMessage = lead.replyMessage || "";
       const sentReply = e?.sendResult?.reply || "";
       const sentReplyAt = e?.sentAt || e?.sendResult?.sentAt || "";
-      const replyMessageAt = e?.createdAt || "";
 
       const thread = [];
       const hints = { yourMessage, replyMessage, sentReply };
@@ -438,7 +455,7 @@
 
       if (!thread.length) {
         if (your) upsert("us", your);
-        if (reply) upsert("lead", reply, replyMessageAt || null);
+        if (reply) upsert("lead", reply);
       } else {
         if (your) {
           if (!thread.some((m) => m.text === your)) {
@@ -450,7 +467,7 @@
             upsert("us", your);
           }
         }
-        if (reply) upsert("lead", reply, replyMessageAt || null);
+        if (reply) upsert("lead", reply);
       }
 
       if (sentReply) upsert("us", sentReply, sentReplyAt || null);

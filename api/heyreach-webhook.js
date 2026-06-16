@@ -1,4 +1,4 @@
-import { parseHeyReachPayload, verifyHeyReachSecret } from "../lib/heyreach.js";
+import { parseHeyReachPayload, verifyHeyReachSecret, fetchHeyReachChatroom, mergeIncomingThreads } from "../lib/heyreach.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
 import { classifyReplySentiment } from "../lib/sentiment.js";
 import {
@@ -43,6 +43,27 @@ export default async function handler(req, res) {
     }
 
     const conversationId = parsed.lead.conversationId || null;
+    const linkedInAccountId = parsed.lead.linkedInAccountId || null;
+
+    let incomingThread = parsed.lead.conversation;
+    // Only call HeyReach API when webhook thread is sparse or lacks timestamps.
+    const needsEnrichment =
+      !incomingThread?.length ||
+      incomingThread.length < 3 ||
+      !incomingThread.some((m) => m?.at);
+    if (conversationId && linkedInAccountId && needsEnrichment) {
+      try {
+        const apiThread = await fetchHeyReachChatroom({
+          conversationId,
+          linkedInAccountId,
+          timeoutMs: 4000,
+        });
+        incomingThread = mergeIncomingThreads(incomingThread, apiThread);
+      } catch (err) {
+        console.warn("HeyReach GetChatroom fetch failed:", err.message);
+      }
+    }
+
     const latestInConversation = conversationId
       ? await findEventByConversationId(conversationId)
       : null;
@@ -53,7 +74,7 @@ export default async function handler(req, res) {
     const mergedConversation = mergeWebhookConversation({
       priorEvent: latestInConversation,
       priorThread,
-      incomingThread: parsed.lead.conversation,
+      incomingThread,
       yourMessage: parsed.lead.yourMessage,
       replyMessage: parsed.lead.replyMessage,
     });

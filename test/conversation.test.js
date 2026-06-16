@@ -225,7 +225,41 @@ test("syncAllLeadConversationEvents updates every event for a conversation", asy
   assert.equal(updates.length, 2);
   assert.equal(updates[0].id, "evt_new");
   assert.equal(updates[0].patch.lead.conversation.length, 3);
+  assert.equal(updates[0].patch.lead.replyMessage, "New");
   assert.equal(updates[1].id, "evt_old");
   assert.equal(updates[1].patch.lead.replyMessage, "Old");
   assert.equal(updates[1].patch.lead.conversation.length, 3);
+});
+
+test("syncAllLeadConversationEvents preserves sent event reply when newest is sent", async () => {
+  const updates = [];
+  const events = [
+    {
+      id: "evt_sent",
+      status: "sent",
+      lead: { conversationId: "c1", replyMessage: "Interested" },
+      sendResult: { reply: "Great, let's chat" },
+    },
+  ];
+  const merged = [
+    { from: "us", text: "Hi" },
+    { from: "lead", text: "Interested" },
+    { from: "us", text: "Great, let's chat" },
+    { from: "lead", text: "Tuesday works" },
+  ];
+
+  await syncAllLeadConversationEvents({
+    conversationId: "c1",
+    mergedConversation: merged,
+    parsedLead: { conversationId: "c1" },
+    findAllEvents: async () => events,
+    updateEvent: async (id, patch) => {
+      updates.push({ id, patch });
+      return { id, ...patch };
+    },
+  });
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].patch.lead.replyMessage, "Interested");
+  assert.equal(updates[0].patch.lead.conversation.length, 4);
 });
