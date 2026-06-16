@@ -83,6 +83,50 @@ test("parseHeyReachPayload extracts message type from eventType", () => {
   assert.equal(parsed.lead.messageType, "inmail_reply_received");
 });
 
+test("parseHeyReachPayload accepts HeyReach recent_messages and sender.id shape", () => {
+  const parsed = parseHeyReachPayload({
+    event_type: "every_message_reply_received",
+    conversation_id: "conv-real-99",
+    sender: {
+      id: 987654,
+      firstName: "Alex",
+      lastName: "Sales",
+    },
+    lead: {
+      first_name: "Jane",
+      last_name: "Doe",
+      profile_url: "https://linkedin.com/in/janedoe",
+      company_name: "Acme Inc",
+    },
+    recent_messages: [
+      { text: "Hi Jane, would you be open to a quick call?", direction: "outbound" },
+      { text: "Yes, let's chat next week!", direction: "inbound" },
+    ],
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.fullName, "Jane Doe");
+  assert.equal(parsed.lead.replyMessage, "Yes, let's chat next week!");
+  assert.equal(parsed.lead.yourMessage, "Hi Jane, would you be open to a quick call?");
+  assert.equal(parsed.lead.conversationId, "conv-real-99");
+  assert.equal(parsed.lead.linkedInAccountId, 987654);
+  assert.equal(parsed.lead.linkedInAccountName, "Alex Sales");
+  assert.equal(parsed.lead.conversation.length, 2);
+  assert.equal(parsed.lead.conversation[1].from, "lead");
+});
+
+test("parseHeyReachPayload derives reply from last recent_message when direction is missing", () => {
+  const parsed = parseHeyReachPayload({
+    prospect: { fullName: "Sam Lee" },
+    conversation_id: "conv-55",
+    sender: { id: 111 },
+    recent_messages: [{ body: "Our initial pitch." }, { body: "Tell me more." }],
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.replyMessage, "Tell me more.");
+});
+
 test("formatHeyReachMessageType humanizes webhook types", () => {
   assert.equal(formatHeyReachMessageType("every_message_reply_received"), "Reply received");
   assert.equal(formatHeyReachMessageType("MESSAGE_REPLY_RECEIVED"), "First reply");
