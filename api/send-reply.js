@@ -43,17 +43,19 @@ export default async function handler(req, res) {
       message: replyText,
     });
 
+    const sentAt = new Date().toISOString();
     const conversation = enrichDisplayThread({
       conversation: lead.conversation,
       yourMessage: lead.yourMessage,
       replyMessage: lead.replyMessage,
       sentReply: replyText,
+      sentReplyAt: sentAt,
     });
 
     const updated = await updateEvent(id, {
       status: "sent",
-      sentAt: new Date().toISOString(),
-      sendResult: { reply: replyText, heyreach: heyReachResult, linkedInAccountId },
+      sentAt,
+      sendResult: { reply: replyText, sentAt, heyreach: heyReachResult, linkedInAccountId },
       draft: { ...(event.draft || {}), reply: replyText },
       lead: { ...lead, conversation },
     });

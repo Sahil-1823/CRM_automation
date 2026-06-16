@@ -47,16 +47,24 @@ test("parseHeyReachPayload parses message thread when provided", () => {
     lead: { fullName: "Jane Doe" },
     message: "Latest reply",
     messages: [
-      { text: "Hi Jane, interested in a call?", direction: "outbound" },
-      { text: "Sure, tell me more.", isFromLead: true },
-      { text: "Latest reply", isFromLead: true },
+      {
+        text: "Hi Jane, interested in a call?",
+        direction: "outbound",
+        createdAt: "2026-06-10T10:00:00.000Z",
+      },
+      {
+        text: "Sure, tell me more.",
+        isFromLead: true,
+        createdAt: "2026-06-10T11:00:00.000Z",
+      },
+      { text: "Latest reply", isFromLead: true, createdAt: "2026-06-10T12:00:00.000Z" },
     ],
   });
 
   assert.equal(parsed.valid, true);
   assert.equal(parsed.lead.conversation.length, 3);
-  assert.equal(parsed.lead.conversation[0].from, "us");
-  assert.equal(parsed.lead.conversation[2].text, "Latest reply");
+  assert.equal(parsed.lead.conversation[0].at, "2026-06-10T10:00:00.000Z");
+  assert.equal(parsed.lead.conversation[2].at, "2026-06-10T12:00:00.000Z");
 });
 
 test("parseHeyReachPayload extracts campaign id and name", () => {

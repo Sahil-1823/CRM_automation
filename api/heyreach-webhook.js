@@ -9,9 +9,9 @@ import {
 import { saveEvent, findEventByConversationId, updateEvent } from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
 import {
-  mergeConversationHistory,
-  enrichDisplayThread,
   conversationFromEvent,
+  mergeWebhookConversation,
+  evaluateInboundWebhook,
 } from "../lib/conversation.js";
 
 export default async function handler(req, res) {
@@ -43,19 +43,51 @@ export default async function handler(req, res) {
     const priorThread = latestInConversation
       ? conversationFromEvent(latestInConversation)
       : [];
-    const mergedConversation = enrichDisplayThread({
-      conversation: mergeConversationHistory(priorThread, parsed.lead.conversation),
+
+    const mergedConversation = mergeWebhookConversation({
+      priorEvent: latestInConversation,
+      priorThread,
+      incomingThread: parsed.lead.conversation,
       yourMessage: parsed.lead.yourMessage,
       replyMessage: parsed.lead.replyMessage,
-      sentReply:
-        latestInConversation?.status === "sent"
-          ? latestInConversation.sendResult?.reply || ""
-          : "",
     });
+
+    const inbound = evaluateInboundWebhook({
+      priorEvent: latestInConversation,
+      priorThread,
+      mergedConversation,
+      incomingReplyMessage: parsed.lead.replyMessage,
+    });
+
+    if (!inbound.process) {
+      return jsonResponse(res, 200, {
+        ok: true,
+        action: "skipped",
+        reason: inbound.reason,
+        eventId: latestInConversation?.id || null,
+      });
+    }
+
     const leadWithHistory = {
       ...parsed.lead,
       conversation: mergedConversation,
+      replyMessage: inbound.latestLeadReply,
     };
+
+    const existing = conversationId
+      ? await findEventByConversationId(conversationId, { status: "pending_review" })
+      : null;
+
+    if (
+      existing &&
+      existing.lead?.replyMessage?.trim() === leadWithHistory.replyMessage?.trim()
+    ) {
+      return jsonResponse(res, 200, {
+        ok: true,
+        action: "duplicate_ignored",
+        eventId: existing.id,
+      });
+    }
 
     const sentiment = await classifyReplySentiment({
       replyMessage: leadWithHistory.replyMessage,
@@ -108,28 +140,6 @@ export default async function handler(req, res) {
       draft,
       status: "pending_review",
     };
-
-    const existing = conversationId
-      ? await findEventByConversationId(conversationId, { status: "pending_review" })
-      : null;
-
-    // Idempotency guard: skip creating/rewriting when HeyReach resends
-    // the same reply text for the same conversation.
-    if (
-      existing &&
-      existing.lead?.replyMessage?.trim() &&
-      leadWithHistory.replyMessage?.trim() &&
-      existing.lead.replyMessage.trim() === leadWithHistory.replyMessage.trim()
-    ) {
-      return jsonResponse(res, 200, {
-        ok: true,
-        action: "duplicate_ignored",
-        eventId: existing.id,
-        sentiment: sentiment.sentiment,
-        draftEnabled: isDraftGenerationEnabled(),
-        project: project.id ? { id: project.id, name: project.name } : null,
-      });
-    }
 
     const record = existing
       ? await updateEvent(existing.id, {

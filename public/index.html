@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>Admin · HeyReach Inbox</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -221,6 +222,19 @@
       return d.toLocaleDateString();
     };
 
+    const fmtDateTime = (iso) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    };
+
     const statusBadge = (status) => {
       const map = {
         pending_review: "Pending review",
@@ -375,6 +389,8 @@
       const yourMessage = lead.yourMessage || "";
       const replyMessage = lead.replyMessage || "";
       const sentReply = e?.sendResult?.reply || "";
+      const sentReplyAt = e?.sentAt || e?.sendResult?.sentAt || "";
+      const replyMessageAt = e?.createdAt || "";
 
       const thread = [];
       const hints = { yourMessage, replyMessage, sentReply };
@@ -390,24 +406,31 @@
 
       const rolePriority = (from) => (from === "us" || from === "lead" ? 2 : 1);
 
-      const upsert = (from, text) => {
+      const upsert = (from, text, at = null) => {
         const trimmed = String(text || "").trim();
         if (!trimmed) return;
         const resolvedFrom = from === "unknown" ? inferRole(trimmed) || "unknown" : from;
         const existingIdx = thread.findIndex((m) => m.text === trimmed);
         if (existingIdx >= 0) {
           if (rolePriority(resolvedFrom) > rolePriority(thread[existingIdx].from)) {
-            thread[existingIdx] = { from: resolvedFrom, text: trimmed };
+            thread[existingIdx] = {
+              from: resolvedFrom,
+              text: trimmed,
+              ...(thread[existingIdx].at ? { at: thread[existingIdx].at } : {}),
+            };
           }
+          if (at && !thread[existingIdx].at) thread[existingIdx].at = at;
           return;
         }
-        thread.push({ from: resolvedFrom, text: trimmed });
+        const entry = { from: resolvedFrom, text: trimmed };
+        if (at) entry.at = at;
+        thread.push(entry);
       };
 
       for (const msg of lead.conversation || []) {
         if (!msg?.text) continue;
         const from = msg.from === "lead" || msg.from === "us" ? msg.from : "unknown";
-        upsert(from, msg.text);
+        upsert(from, msg.text, msg.at || null);
       }
 
       const your = yourMessage.trim();
@@ -415,21 +438,22 @@
 
       if (!thread.length) {
         if (your) upsert("us", your);
-        if (reply) upsert("lead", reply);
+        if (reply) upsert("lead", reply, replyMessageAt || null);
       } else {
         if (your) {
           if (!thread.some((m) => m.text === your)) {
             const firstLead = thread.findIndex((m) => m.from === "lead");
-            if (firstLead >= 0) thread.splice(firstLead, 0, { from: "us", text: your });
-            else thread.push({ from: "us", text: your });
+            const entry = { from: "us", text: your };
+            if (firstLead >= 0) thread.splice(firstLead, 0, entry);
+            else thread.push(entry);
           } else {
             upsert("us", your);
           }
         }
-        if (reply) upsert("lead", reply);
+        if (reply) upsert("lead", reply, replyMessageAt || null);
       }
 
-      if (sentReply) upsert("us", sentReply);
+      if (sentReply) upsert("us", sentReply, sentReplyAt || null);
       return thread;
     }
 
@@ -439,7 +463,7 @@
       }
 
       return `
-        <div class="flex flex-col gap-3 max-h-[28rem] overflow-y-auto scrollbar pr-1">
+        <div id="conversationThread" class="flex flex-col gap-3 h-80 sm:h-96 overflow-y-auto overflow-x-hidden scrollbar border border-slate-100 rounded-lg bg-slate-50/50 p-3">
           ${conversation.map((msg) => {
             const isLead = msg.from === "lead";
             const isUs = msg.from === "us";
@@ -451,15 +475,25 @@
                 : "bg-amber-50 text-slate-800 border border-amber-200 rounded-2xl";
             const label = isLead ? "Lead" : isUs ? "You" : "Message";
             const labelClass = isUs ? "text-right" : "text-left";
+            const timeLabel = fmtDateTime(msg.at);
+            const timeClass = isUs ? "text-slate-400" : "text-slate-400";
             return `
               <div class="flex ${align}">
                 <div class="max-w-[85%]">
-                  <div class="text-[10px] text-slate-400 mb-1 px-1 ${labelClass}">${escapeHtml(label)}</div>
+                  <div class="text-[10px] text-slate-400 mb-1 px-1 ${labelClass} flex items-center gap-2 ${isUs ? "justify-end" : "justify-start"}">
+                    <span>${escapeHtml(label)}</span>
+                    ${timeLabel ? `<span class="${timeClass}">· ${escapeHtml(timeLabel)}</span>` : ""}
+                  </div>
                   <div class="px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${bubble}">${escapeHtml(msg.text)}</div>
                 </div>
               </div>`;
           }).join("")}
         </div>`;
+    }
+
+    function scrollThreadToBottom() {
+      const el = document.getElementById("conversationThread");
+      if (el) el.scrollTop = el.scrollHeight;
     }
 
     function renderRagPanel(sources, citedSources) {
@@ -549,7 +583,7 @@
     }
 
     async function loadEvents() {
-      const res = await fetch("/api/events?limit=200");
+      const res = await fetch("/api/events?limit=200", { cache: "no-store" });
       const data = await res.json();
       state.events = data.events || [];
       populateAccountFilter();
@@ -741,6 +775,7 @@
       }
 
       wireRagDropdown(e.draft?.ragSources, e.draft?.citedSources);
+      scrollThreadToBottom();
     }
 
     async function regenerateDraft(id) {
