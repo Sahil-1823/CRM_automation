@@ -45,6 +45,17 @@ test("conversationFromEvent includes sent message after send", () => {
   assert.ok(thread.some((m) => m.from === "us" && m.text === "Thanks, talk soon."));
 });
 
+test("enrichDisplayThread does not duplicate reply text shown as unknown", () => {
+  const thread = enrichDisplayThread({
+    conversation: [{ from: "unknown", text: "Tell me more." }],
+    replyMessage: "Tell me more.",
+    yourMessage: "Hi there",
+  });
+
+  assert.equal(thread.filter((m) => m.text === "Tell me more.").length, 1);
+  assert.equal(thread.find((m) => m.text === "Tell me more.").from, "lead");
+});
+
 test("mergeConversationHistory dedupes repeated messages", () => {
   const merged = mergeConversationHistory(
     [{ from: "us", text: "Hi" }],

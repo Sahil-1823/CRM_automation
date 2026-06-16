@@ -368,46 +368,67 @@
 
     function conversationFromEvent(e) {
       const lead = e?.lead || {};
+      const yourMessage = lead.yourMessage || "";
+      const replyMessage = lead.replyMessage || "";
       const sentReply =
         e?.status === "sent"
           ? e?.sendResult?.reply || e?.draft?.reply || ""
           : "";
 
       const thread = [];
-      const seen = new Set();
-      const add = (from, text) => {
+      const hints = { yourMessage, replyMessage, sentReply };
+
+      const inferRole = (text) => {
+        const trimmed = String(text || "").trim();
+        if (!trimmed) return null;
+        if (replyMessage?.trim() === trimmed) return "lead";
+        if (yourMessage?.trim() === trimmed) return "us";
+        if (sentReply?.trim() === trimmed) return "us";
+        return null;
+      };
+
+      const rolePriority = (from) => (from === "us" || from === "lead" ? 2 : 1);
+
+      const upsert = (from, text) => {
         const trimmed = String(text || "").trim();
         if (!trimmed) return;
-        const key = `${from}::${trimmed}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        thread.push({ from, text: trimmed });
+        const resolvedFrom = from === "unknown" ? inferRole(trimmed) || "unknown" : from;
+        const existingIdx = thread.findIndex((m) => m.text === trimmed);
+        if (existingIdx >= 0) {
+          if (rolePriority(resolvedFrom) > rolePriority(thread[existingIdx].from)) {
+            thread[existingIdx] = { from: resolvedFrom, text: trimmed };
+          }
+          return;
+        }
+        thread.push({ from: resolvedFrom, text: trimmed });
       };
 
       for (const msg of lead.conversation || []) {
         if (!msg?.text) continue;
         const from = msg.from === "lead" || msg.from === "us" ? msg.from : "unknown";
-        add(from, msg.text);
+        upsert(from, msg.text);
       }
 
-      const your = lead.yourMessage?.trim() || "";
-      const reply = lead.replyMessage?.trim() || "";
+      const your = yourMessage.trim();
+      const reply = replyMessage.trim();
 
       if (!thread.length) {
-        if (your) add("us", your);
-        if (reply) add("lead", reply);
+        if (your) upsert("us", your);
+        if (reply) upsert("lead", reply);
       } else {
-        if (your && !thread.some((m) => m.from === "us" && m.text === your)) {
-          const firstLead = thread.findIndex((m) => m.from === "lead");
-          if (firstLead >= 0) thread.splice(firstLead, 0, { from: "us", text: your });
-          else add("us", your);
+        if (your) {
+          if (!thread.some((m) => m.text === your)) {
+            const firstLead = thread.findIndex((m) => m.from === "lead");
+            if (firstLead >= 0) thread.splice(firstLead, 0, { from: "us", text: your });
+            else thread.push({ from: "us", text: your });
+          } else {
+            upsert("us", your);
+          }
         }
-        if (reply && !thread.some((m) => m.from === "lead" && m.text === reply)) {
-          add("lead", reply);
-        }
+        if (reply) upsert("lead", reply);
       }
 
-      if (sentReply) add("us", sentReply);
+      if (sentReply) upsert("us", sentReply);
       return thread;
     }
 
