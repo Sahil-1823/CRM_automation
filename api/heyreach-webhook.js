@@ -6,7 +6,7 @@ import {
   generateDraftForLead,
   emptyDraft,
 } from "../lib/draft-pipeline.js";
-import { saveEvent } from "../lib/store.js";
+import { saveEvent, findEventByConversationId, updateEvent } from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
 
 export default async function handler(req, res) {
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const record = await saveEvent({
+    const eventPatch = {
       lead: parsed.lead,
       linkedInAccount: parsed.lead.linkedInAccountId
         ? {
@@ -81,7 +81,37 @@ export default async function handler(req, res) {
       project,
       draft,
       status: "pending_review",
-    });
+    };
+
+    const conversationId = parsed.lead.conversationId || null;
+    const existing = conversationId
+      ? await findEventByConversationId(conversationId, { status: "pending_review" })
+      : null;
+
+    // Idempotency guard: skip creating/rewriting when HeyReach resends
+    // the same reply text for the same conversation.
+    if (
+      existing &&
+      existing.lead?.replyMessage?.trim() &&
+      parsed.lead.replyMessage?.trim() &&
+      existing.lead.replyMessage.trim() === parsed.lead.replyMessage.trim()
+    ) {
+      return jsonResponse(res, 200, {
+        ok: true,
+        action: "duplicate_ignored",
+        eventId: existing.id,
+        sentiment: sentiment.sentiment,
+        draftEnabled: isDraftGenerationEnabled(),
+        project: project.id ? { id: project.id, name: project.name } : null,
+      });
+    }
+
+    const record = existing
+      ? await updateEvent(existing.id, {
+          ...eventPatch,
+          refreshedAt: new Date().toISOString(),
+        })
+      : await saveEvent(eventPatch);
 
     return jsonResponse(res, 200, {
       ok: true,
