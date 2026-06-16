@@ -1,5 +1,5 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
-import { listEvents, getEvent, updateEvent, isUsingRedis } from "../lib/store.js";
+import { listEvents, getEvent, updateEvent, clearAllEvents, isUsingRedis } from "../lib/store.js";
 import { requireAuth } from "../lib/auth.js";
 
 export default async function handler(req, res) {
@@ -37,6 +37,21 @@ export default async function handler(req, res) {
 
       const updated = await updateEvent(id, patch);
       return jsonResponse(res, 200, { event: updated });
+    }
+
+    if (req.method === "DELETE") {
+      const all = url.searchParams.get("all");
+      if (all !== "1") {
+        return jsonResponse(res, 400, {
+          error: "Missing confirmation. Use DELETE /api/events?all=1",
+        });
+      }
+      const result = await clearAllEvents();
+      return jsonResponse(res, 200, {
+        ok: true,
+        deleted: result.deleted,
+        storage: result.storage,
+      });
     }
 
     return jsonResponse(res, 405, { error: "Method not allowed" });

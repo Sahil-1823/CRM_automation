@@ -23,6 +23,7 @@
       <div class="flex items-center gap-3 shrink-0">
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge base</button>
+        <button id="clearBtn" class="text-sm px-3 py-1.5 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50">Clear all</button>
         <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
       </div>
     </header>
@@ -717,6 +718,36 @@
       }
     }
 
+    async function clearAllEvents() {
+      const ok = window.confirm(
+        "Delete all conversations from admin dashboard? This cannot be undone.",
+      );
+      if (!ok) return;
+
+      const btn = document.getElementById("clearBtn");
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Clearing…";
+      try {
+        const res = await fetch("/api/events?all=1", { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok) {
+          toast(data.error || "Failed to clear");
+          return;
+        }
+        state.selectedId = null;
+        toast(`Cleared ${data.deleted || 0} conversations`);
+        await loadEvents();
+        document.getElementById("detail").innerHTML =
+          '<div class="h-full grid place-items-center text-slate-400 text-sm">Select a conversation to review.</div>';
+      } catch (err) {
+        toast(err.message || "Failed to clear");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+
     // ── Projects ──────────────────────────────────────────────────
 
     async function loadProjects() {
@@ -761,8 +792,16 @@
         btn.addEventListener("click", async () => {
           if (!confirm("Delete this project? Documents assigned to it will become global.")) return;
           const res = await fetch(`/api/projects?id=${encodeURIComponent(btn.dataset.delId)}`, { method: "DELETE" });
-          if (res.ok) { toast("Project deleted"); await loadProjects(); }
-          else { const d = await res.json(); toast(d.message || "Delete failed"); }
+          if (res.ok) {
+            const d = await res.json();
+            const moved = Number(d.reassignedDocuments || 0);
+            toast(moved ? `Project deleted · ${moved} doc(s) moved to global` : "Project deleted");
+            await loadProjects();
+            await loadDocuments();
+          } else {
+            const d = await res.json();
+            toast(d.message || "Delete failed");
+          }
         });
       });
 
@@ -1098,6 +1137,7 @@
     // });
 
     document.getElementById("refreshBtn").addEventListener("click", loadEvents);
+    document.getElementById("clearBtn").addEventListener("click", clearAllEvents);
 
     document.getElementById("logoutBtn").addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });

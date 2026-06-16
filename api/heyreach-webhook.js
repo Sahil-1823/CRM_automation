@@ -9,6 +9,32 @@ import {
 import { saveEvent, findEventByConversationId, updateEvent } from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
 
+function normalizeThreadMessage(msg) {
+  if (!msg || typeof msg !== "object") return null;
+  const from = msg.from === "lead" || msg.from === "us" ? msg.from : "unknown";
+  const text = typeof msg.text === "string" ? msg.text.trim() : "";
+  if (!text) return null;
+  return { from, text };
+}
+
+function mergeConversationHistory(previous, incoming) {
+  const prior = Array.isArray(previous) ? previous.map(normalizeThreadMessage).filter(Boolean) : [];
+  const next = Array.isArray(incoming) ? incoming.map(normalizeThreadMessage).filter(Boolean) : [];
+  if (!prior.length) return next;
+  if (!next.length) return prior;
+
+  const merged = [...prior];
+  const seen = new Set(prior.map((m) => `${m.from}::${m.text}`));
+  for (const msg of next) {
+    const key = `${msg.from}::${msg.text}`;
+    if (!seen.has(key)) {
+      merged.push(msg);
+      seen.add(key);
+    }
+  }
+  return merged;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return jsonResponse(res, 405, { error: "Method not allowed" });
@@ -31,11 +57,24 @@ export default async function handler(req, res) {
       });
     }
 
+    const conversationId = parsed.lead.conversationId || null;
+    const latestInConversation = conversationId
+      ? await findEventByConversationId(conversationId)
+      : null;
+    const mergedConversation = mergeConversationHistory(
+      latestInConversation?.lead?.conversation,
+      parsed.lead.conversation,
+    );
+    const leadWithHistory = {
+      ...parsed.lead,
+      conversation: mergedConversation,
+    };
+
     const sentiment = await classifyReplySentiment({
-      replyMessage: parsed.lead.replyMessage,
-      yourMessage: parsed.lead.yourMessage,
-      leadName: parsed.lead.fullName,
-      companyName: parsed.lead.companyName,
+      replyMessage: leadWithHistory.replyMessage,
+      yourMessage: leadWithHistory.yourMessage,
+      leadName: leadWithHistory.fullName,
+      companyName: leadWithHistory.companyName,
     });
 
     let draftProjectId = "all";
@@ -45,7 +84,7 @@ export default async function handler(req, res) {
     if (isDraftGenerationEnabled()) {
       try {
         const result = await generateDraftForLead({
-          lead: parsed.lead,
+          lead: leadWithHistory,
           sentiment,
         });
         draft = result.draft;
@@ -57,21 +96,21 @@ export default async function handler(req, res) {
     }
 
     const eventPatch = {
-      lead: parsed.lead,
-      linkedInAccount: parsed.lead.linkedInAccountId
+      lead: leadWithHistory,
+      linkedInAccount: leadWithHistory.linkedInAccountId
         ? {
-            linkedInAccountId: parsed.lead.linkedInAccountId,
-            name: parsed.lead.linkedInAccountName || null,
+            linkedInAccountId: leadWithHistory.linkedInAccountId,
+            name: leadWithHistory.linkedInAccountName || null,
           }
         : null,
       campaign:
-        parsed.lead.campaignId || parsed.lead.campaignName
+        leadWithHistory.campaignId || leadWithHistory.campaignName
           ? {
-              id: parsed.lead.campaignId ?? null,
-              name: parsed.lead.campaignName || null,
+              id: leadWithHistory.campaignId ?? null,
+              name: leadWithHistory.campaignName || null,
             }
           : null,
-      messageType: parsed.lead.messageType || parsed.lead.eventType || null,
+      messageType: leadWithHistory.messageType || leadWithHistory.eventType || null,
       sentiment: {
         label: sentiment.sentiment,
         isPositive: sentiment.isPositive,
@@ -83,7 +122,6 @@ export default async function handler(req, res) {
       status: "pending_review",
     };
 
-    const conversationId = parsed.lead.conversationId || null;
     const existing = conversationId
       ? await findEventByConversationId(conversationId, { status: "pending_review" })
       : null;
@@ -93,8 +131,8 @@ export default async function handler(req, res) {
     if (
       existing &&
       existing.lead?.replyMessage?.trim() &&
-      parsed.lead.replyMessage?.trim() &&
-      existing.lead.replyMessage.trim() === parsed.lead.replyMessage.trim()
+      leadWithHistory.replyMessage?.trim() &&
+      existing.lead.replyMessage.trim() === leadWithHistory.replyMessage.trim()
     ) {
       return jsonResponse(res, 200, {
         ok: true,
