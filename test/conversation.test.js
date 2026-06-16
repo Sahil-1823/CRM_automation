@@ -184,6 +184,29 @@ test("mergeWebhookConversation keeps prior-only messages and applies HeyReach or
   assert.equal(merged.at(-1).text, "Tuesday works");
 });
 
+test("mergeWebhookConversation dedupes by message id and preserves atSource", () => {
+  const merged = mergeWebhookConversation({
+    priorEvent: null,
+    priorThread: [
+      { id: "m1", from: "us", text: "Hi", at: "2026-06-10T10:00:00.000Z", atSource: "heyreach_api" },
+      { id: "m2", from: "lead", text: "Interested", at: "2026-06-10T11:00:00.000Z", atSource: "heyreach_api" },
+    ],
+    incomingThread: [
+      { id: "m1", from: "us", text: "Hi (slightly different formatting)" },
+      { id: "m3", from: "lead", text: "Tuesday works", at: "2026-06-10T12:00:00.000Z", atSource: "heyreach_webhook" },
+    ],
+  });
+
+  // m1 should not be duplicated despite different text
+  const m1Count = merged.filter((m) => m.id === "m1").length;
+  assert.equal(m1Count, 1);
+  // new message appended
+  assert.ok(merged.find((m) => m.id === "m3"));
+  // atSource preserved
+  assert.equal(merged.find((m) => m.id === "m2").atSource, "heyreach_api");
+  assert.equal(merged.find((m) => m.id === "m3").atSource, "heyreach_webhook");
+});
+
 test("buildConversationOnlyPatch updates thread without changing reply context", () => {
   const patch = buildConversationOnlyPatch(
     { id: "evt_old", status: "sent", lead: { replyMessage: "Old reply" } },

@@ -1,4 +1,9 @@
-import { parseHeyReachPayload, verifyHeyReachSecret, fetchHeyReachChatroom, mergeIncomingThreads } from "../lib/heyreach.js";
+import {
+  parseHeyReachPayload,
+  verifyHeyReachSecret,
+  fetchHeyReachChatroom,
+  mergeIncomingThreads,
+} from "../lib/heyreach.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
 import { classifyReplySentiment } from "../lib/sentiment.js";
 import {
@@ -19,23 +24,38 @@ import {
   evaluateInboundWebhook,
   syncAllLeadConversationEvents,
 } from "../lib/conversation.js";
+import {
+  log,
+  buildIdempotencyKey,
+  claimIdempotencyKey,
+  readChatroomCache,
+  writeChatroomCache,
+  archiveRawWebhook,
+} from "../lib/infra.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return jsonResponse(res, 405, { error: "Method not allowed" });
   }
 
+  const startedAt = Date.now();
+
   try {
     const config = getConfig();
 
     if (!verifyHeyReachSecret(req, config.heyreach.webhookSecret)) {
+      log("warn", "webhook.unauthorized");
       return jsonResponse(res, 401, { error: "Unauthorized" });
     }
 
     const payload = await readJsonBody(req);
-    const parsed = parseHeyReachPayload(payload);
+    const rawId = await archiveRawWebhook(payload, {
+      ua: req.headers["user-agent"] || null,
+    });
 
+    const parsed = parseHeyReachPayload(payload);
     if (!parsed.valid) {
+      log("warn", "webhook.invalid_payload", { rawId, missing: parsed.errors });
       return jsonResponse(res, 400, {
         error: "Invalid HeyReach payload",
         missing: parsed.errors,
@@ -44,23 +64,52 @@ export default async function handler(req, res) {
 
     const conversationId = parsed.lead.conversationId || null;
     const linkedInAccountId = parsed.lead.linkedInAccountId || null;
+    const eventType = parsed.lead.eventType || parsed.lead.messageType || null;
 
+    const idemKey = buildIdempotencyKey({
+      conversationId,
+      eventType,
+      latestText: parsed.lead.replyMessage,
+      fallbackBody: rawId,
+    });
+    const firstSeen = await claimIdempotencyKey(idemKey);
+    if (!firstSeen) {
+      log("info", "webhook.duplicate_delivery", { rawId, idemKey, conversationId });
+      return jsonResponse(res, 200, { ok: true, action: "duplicate_delivery", rawId });
+    }
+
+    // Enrich thread only when sparse / missing trusted timestamps.
     let incomingThread = parsed.lead.conversation;
-    // Only call HeyReach API when webhook thread is sparse or lacks timestamps.
     const needsEnrichment =
       !incomingThread?.length ||
       incomingThread.length < 3 ||
       !incomingThread.some((m) => m?.at);
+
     if (conversationId && linkedInAccountId && needsEnrichment) {
-      try {
-        const apiThread = await fetchHeyReachChatroom({
-          conversationId,
-          linkedInAccountId,
-          timeoutMs: 4000,
-        });
-        incomingThread = mergeIncomingThreads(incomingThread, apiThread);
-      } catch (err) {
-        console.warn("HeyReach GetChatroom fetch failed:", err.message);
+      const cached = await readChatroomCache(conversationId, linkedInAccountId);
+      if (cached?.length) {
+        incomingThread = mergeIncomingThreads(incomingThread, cached);
+        log("info", "chatroom.cache_hit", { conversationId, size: cached.length });
+      } else {
+        try {
+          const t0 = Date.now();
+          const apiThread = await fetchHeyReachChatroom({
+            conversationId,
+            linkedInAccountId,
+            timeoutMs: 4000,
+          });
+          log("info", "chatroom.fetched", {
+            conversationId,
+            size: apiThread.length,
+            ms: Date.now() - t0,
+          });
+          if (apiThread.length) {
+            await writeChatroomCache(conversationId, linkedInAccountId, apiThread);
+          }
+          incomingThread = mergeIncomingThreads(incomingThread, apiThread);
+        } catch (err) {
+          log("warn", "chatroom.fetch_failed", { conversationId, error: err.message });
+        }
       }
     }
 
@@ -97,6 +146,13 @@ export default async function handler(req, res) {
     });
 
     if (!inbound.process) {
+      log("info", "webhook.skipped", {
+        rawId,
+        conversationId,
+        reason: inbound.reason,
+        synced: conversationSync.synced,
+        ms: Date.now() - startedAt,
+      });
       return jsonResponse(res, 200, {
         ok: true,
         action: "skipped",
@@ -104,6 +160,7 @@ export default async function handler(req, res) {
         conversationSynced: conversationSync.synced > 0,
         eventsUpdated: conversationSync.synced,
         eventId: conversationSync.primaryId || latestInConversation?.id || null,
+        rawId,
       });
     }
 
@@ -121,12 +178,18 @@ export default async function handler(req, res) {
       existing &&
       existing.lead?.replyMessage?.trim() === leadWithHistory.replyMessage?.trim()
     ) {
+      log("info", "webhook.duplicate_pending", {
+        rawId,
+        conversationId,
+        eventId: existing.id,
+      });
       return jsonResponse(res, 200, {
         ok: true,
         action: "duplicate_ignored",
         conversationSynced: conversationSync.synced > 0,
         eventsUpdated: conversationSync.synced,
         eventId: existing.id,
+        rawId,
       });
     }
 
@@ -151,6 +214,7 @@ export default async function handler(req, res) {
         draftProjectId = result.draftProjectId;
         project = result.project;
       } catch (err) {
+        log("warn", "draft.generation_failed", { conversationId, error: err.message });
         draft = emptyDraft({ error: err.message });
       }
     }
@@ -189,7 +253,6 @@ export default async function handler(req, res) {
         })
       : await saveEvent(eventPatch);
 
-    // New pending after a sent/dismissed record — refresh older events' chat threads too.
     if (conversationId && !existing && latestInConversation) {
       await syncAllLeadConversationEvents({
         conversationId,
@@ -200,6 +263,15 @@ export default async function handler(req, res) {
       });
     }
 
+    log("info", "webhook.pending_review", {
+      rawId,
+      conversationId,
+      eventId: record.id,
+      synced: conversationSync.synced,
+      sentiment: sentiment.sentiment,
+      ms: Date.now() - startedAt,
+    });
+
     return jsonResponse(res, 200, {
       ok: true,
       action: "pending_review",
@@ -209,9 +281,14 @@ export default async function handler(req, res) {
       sentiment: sentiment.sentiment,
       draftEnabled: isDraftGenerationEnabled(),
       project: project.id ? { id: project.id, name: project.name } : null,
+      rawId,
     });
   } catch (error) {
-    console.error("heyreach-webhook error:", error);
+    log("error", "webhook.error", {
+      error: error.message,
+      stack: error.stack,
+      ms: Date.now() - startedAt,
+    });
     return jsonResponse(res, 500, {
       error: "Internal server error",
       message: error.message,

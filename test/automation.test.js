@@ -176,6 +176,35 @@ test("parseChatroomToThread maps HeyReach inbox API messages", () => {
   assert.equal(thread[0].from, "us");
   assert.equal(thread[1].from, "lead");
   assert.equal(thread[2].at, "2026-06-10T12:00:00.000Z");
+  assert.equal(thread[2].atSource, "heyreach_api");
+});
+
+test("parseChatroomToThread carries message ids when provided", () => {
+  const thread = parseChatroomToThread({
+    messages: [
+      { id: "m1", text: "Hello", isIncoming: false },
+      { id: "m2", text: "Interested", isIncoming: true },
+    ],
+  });
+
+  assert.equal(thread[0].id, "m1");
+  assert.equal(thread[1].id, "m2");
+});
+
+test("parseHeyReachPayload tags webhook timestamps with heyreach_webhook source", () => {
+  const parsed = parseHeyReachPayload({
+    conversation_id: "c-src",
+    sender: { id: 7 },
+    lead: { firstName: "Jane", lastName: "Doe" },
+    recent_messages: [
+      { id: "w1", text: "Hi", direction: "outbound", sentAt: "2026-06-10T10:00:00.000Z" },
+      { id: "w2", text: "Yes", direction: "inbound", sentAt: "2026-06-10T11:00:00.000Z" },
+    ],
+  });
+
+  assert.equal(parsed.lead.conversation[0].atSource, "heyreach_webhook");
+  assert.equal(parsed.lead.conversation[0].id, "w1");
+  assert.equal(parsed.lead.conversation[1].id, "w2");
 });
 
 test("mergeIncomingThreads prefers full API history over sparse webhook", () => {
@@ -191,6 +220,17 @@ test("mergeIncomingThreads prefers full API history over sparse webhook", () => 
   assert.equal(merged.length, 3);
   assert.equal(merged[0].text, "Hello");
   assert.equal(merged.at(-1).text, "Latest only");
+});
+
+test("mergeIncomingThreads dedupes by message id even with different text spacing", () => {
+  const merged = mergeIncomingThreads(
+    [{ id: "x1", from: "lead", text: "Following up " }, { from: "lead", text: "Brand new" }],
+    [{ id: "x1", from: "lead", text: "Following up" }],
+  );
+
+  // x1 must not double up
+  assert.equal(merged.filter((m) => m.id === "x1").length, 1);
+  assert.ok(merged.some((m) => m.text === "Brand new"));
 });
 
 test("formatHeyReachMessageType humanizes webhook types", () => {

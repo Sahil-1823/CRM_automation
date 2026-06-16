@@ -393,13 +393,20 @@
         const thread = stored.map((m) => ({
           from: m.from === "lead" || m.from === "us" ? m.from : "unknown",
           text: String(m.text).trim(),
+          ...(m.id ? { id: m.id } : {}),
           ...(m.at ? { at: m.at } : {}),
+          ...(m.atSource ? { atSource: m.atSource } : {}),
         }));
 
         const sentReply = (e?.sendResult?.reply || "").trim();
         const sentAt = e?.sentAt || e?.sendResult?.sentAt || "";
         if (sentReply && !thread.some((m) => m.text === sentReply)) {
-          thread.push({ from: "us", text: sentReply, ...(sentAt ? { at: sentAt } : {}) });
+          const entry = { from: "us", text: sentReply };
+          if (sentAt) {
+            entry.at = sentAt;
+            entry.atSource = "dashboard_send";
+          }
+          thread.push(entry);
         }
         return thread;
       }
@@ -492,7 +499,8 @@
                 : "bg-amber-50 text-slate-800 border border-amber-200 rounded-2xl";
             const label = isLead ? "Lead" : isUs ? "You" : "Message";
             const labelClass = isUs ? "text-right" : "text-left";
-            const timeLabel = fmtDateTime(msg.at);
+            const trustedSources = new Set(["heyreach_api", "heyreach_webhook", "dashboard_send"]);
+            const timeLabel = msg.at && trustedSources.has(msg.atSource) ? fmtDateTime(msg.at) : "";
             const timeClass = isUs ? "text-slate-400" : "text-slate-400";
             return `
               <div class="flex ${align}">
