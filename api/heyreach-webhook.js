@@ -6,12 +6,18 @@ import {
   generateDraftForLead,
   emptyDraft,
 } from "../lib/draft-pipeline.js";
-import { saveEvent, findEventByConversationId, updateEvent } from "../lib/store.js";
+import {
+  saveEvent,
+  findEventByConversationId,
+  findAllEventsByConversationId,
+  updateEvent,
+} from "../lib/store.js";
 import { getConfig } from "../lib/config.js";
 import {
   conversationFromEvent,
   mergeWebhookConversation,
   evaluateInboundWebhook,
+  syncAllLeadConversationEvents,
 } from "../lib/conversation.js";
 
 export default async function handler(req, res) {
@@ -52,6 +58,16 @@ export default async function handler(req, res) {
       replyMessage: parsed.lead.replyMessage,
     });
 
+    const conversationSync = conversationId
+      ? await syncAllLeadConversationEvents({
+          conversationId,
+          mergedConversation,
+          parsedLead: parsed.lead,
+          findAllEvents: findAllEventsByConversationId,
+          updateEvent,
+        })
+      : { synced: 0, primaryId: null };
+
     const inbound = evaluateInboundWebhook({
       priorEvent: latestInConversation,
       priorThread,
@@ -64,7 +80,9 @@ export default async function handler(req, res) {
         ok: true,
         action: "skipped",
         reason: inbound.reason,
-        eventId: latestInConversation?.id || null,
+        conversationSynced: conversationSync.synced > 0,
+        eventsUpdated: conversationSync.synced,
+        eventId: conversationSync.primaryId || latestInConversation?.id || null,
       });
     }
 
@@ -85,6 +103,8 @@ export default async function handler(req, res) {
       return jsonResponse(res, 200, {
         ok: true,
         action: "duplicate_ignored",
+        conversationSynced: conversationSync.synced > 0,
+        eventsUpdated: conversationSync.synced,
         eventId: existing.id,
       });
     }
@@ -148,10 +168,23 @@ export default async function handler(req, res) {
         })
       : await saveEvent(eventPatch);
 
+    // New pending after a sent/dismissed record — refresh older events' chat threads too.
+    if (conversationId && !existing && latestInConversation) {
+      await syncAllLeadConversationEvents({
+        conversationId,
+        mergedConversation,
+        parsedLead: parsed.lead,
+        findAllEvents: findAllEventsByConversationId,
+        updateEvent,
+      });
+    }
+
     return jsonResponse(res, 200, {
       ok: true,
       action: "pending_review",
       eventId: record.id,
+      conversationSynced: conversationSync.synced > 0,
+      eventsUpdated: conversationSync.synced,
       sentiment: sentiment.sentiment,
       draftEnabled: isDraftGenerationEnabled(),
       project: project.id ? { id: project.id, name: project.name } : null,
