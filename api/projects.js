@@ -40,6 +40,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { error: "Method not allowed" });
   } catch (error) {
     console.error("projects api error:", error);
-    return jsonResponse(res, 500, { error: "Internal server error", message: error.message });
+    return jsonResponse(res, 500, { error: "Internal server error" });
   }
 }

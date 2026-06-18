@@ -191,6 +191,19 @@ test("parseChatroomToThread carries message ids when provided", () => {
   assert.equal(thread[1].id, "m2");
 });
 
+test("parseHeyReachPayload accepts correspondent name when lead object is sparse", () => {
+  const parsed = parseHeyReachPayload({
+    conversation_id: "conv-corr",
+    sender: { id: 42 },
+    correspondent: { fullName: "Pat Correspondent" },
+    replyMessage: "Thanks for reaching out",
+  });
+
+  assert.equal(parsed.valid, true);
+  assert.equal(parsed.lead.fullName, "Pat Correspondent");
+  assert.equal(parsed.lead.replyMessage, "Thanks for reaching out");
+});
+
 test("parseHeyReachPayload tags webhook timestamps with heyreach_webhook source", () => {
   const parsed = parseHeyReachPayload({
     conversation_id: "c-src",

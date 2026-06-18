@@ -3,6 +3,7 @@ import {
   getEvent,
   updateEvent,
   findAllEventsByConversationId,
+  serializeEvent,
 } from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach.js";
 import { requireAuth } from "../lib/auth.js";
@@ -83,12 +84,9 @@ export default async function handler(req, res) {
     }
 
     const refreshed = await getEvent(id);
-    return jsonResponse(res, 200, { ok: true, event: refreshed || updated });
+    return jsonResponse(res, 200, { ok: true, event: serializeEvent(refreshed || updated) });
   } catch (error) {
     console.error("send-reply error:", error);
-    return jsonResponse(res, 500, {
-      error: "Failed to send via HeyReach",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Failed to send via HeyReach" });
   }
 }

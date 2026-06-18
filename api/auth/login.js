@@ -19,9 +19,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 200, { ok: true });
   } catch (error) {
     console.error("admin login error:", error);
-    return jsonResponse(res, 500, {
-      error: "Login failed",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Login failed" });
   }
 }

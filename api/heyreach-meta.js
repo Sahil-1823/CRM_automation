@@ -46,9 +46,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 200, meta);
   } catch (error) {
     console.error("heyreach-meta api error:", error);
-    return jsonResponse(res, 500, {
-      error: "Failed to load HeyReach metadata",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Failed to load HeyReach metadata" });
   }
 }

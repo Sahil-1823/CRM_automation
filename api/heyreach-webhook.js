@@ -1,6 +1,6 @@
 import { parseHeyReachPayload, verifyHeyReachSecret } from "../lib/heyreach.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
-import { classifyReplySentiment } from "../lib/sentiment.js";
+import { classifyReply } from "../lib/sentiment.js";
 import {
   isDraftGenerationEnabled,
   generateDraftForLead,
@@ -18,6 +18,9 @@ import {
   mergeWebhookConversation,
   evaluateInboundWebhook,
   syncAllLeadConversationEvents,
+  buildEnsuredConversationEvent,
+  isAwaitingLeadReply,
+  latestLeadMessage,
 } from "../lib/conversation.js";
 import { fetchEnrichedIncomingThread } from "../lib/conversation-sync.js";
 import {
@@ -26,6 +29,39 @@ import {
   claimIdempotencyKey,
   archiveRawWebhook,
 } from "../lib/infra.js";
+
+async function ensureFirstConversationVisible({
+  conversationId,
+  mergedConversation,
+  parsedLead,
+  inbound,
+}) {
+  if (!conversationId || !mergedConversation?.some((m) => m.from === "lead")) {
+    return null;
+  }
+
+  const existing = await findAllEventsByConversationId(conversationId);
+  if (existing.length > 0) return existing[0];
+
+  if (isAwaitingLeadReply(mergedConversation)) {
+    return {
+      forceProcess: true,
+      latestLeadReply:
+        latestLeadMessage(mergedConversation) || parsedLead.replyMessage || inbound?.latestLeadReply || "",
+    };
+  }
+
+  const patch = buildEnsuredConversationEvent({ mergedConversation, parsedLead, inbound });
+  if (!patch) return null;
+
+  const record = await saveEvent(patch);
+  log("info", "webhook.ensured_visible", {
+    conversationId,
+    eventId: record.id,
+    status: record.status,
+  });
+  return record;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -93,6 +129,13 @@ export default async function handler(req, res) {
         })
       : { synced: 0, primaryId: null };
 
+    let inbound = evaluateInboundWebhook({
+      priorEvent: latestInConversation,
+      priorThread,
+      mergedConversation,
+      incomingReplyMessage: parsed.lead.replyMessage,
+    });
+
     const idemKey = buildIdempotencyKey({
       conversationId,
       eventType,
@@ -101,27 +144,63 @@ export default async function handler(req, res) {
     });
     const firstSeen = await claimIdempotencyKey(idemKey);
     if (!firstSeen) {
+      const ensured = await ensureFirstConversationVisible({
+        conversationId,
+        mergedConversation,
+        parsedLead: parsed.lead,
+        inbound,
+      });
+
       log("info", "webhook.duplicate_delivery", {
         rawId,
         idemKey,
         conversationId,
         synced: conversationSync.synced,
+        ensuredEventId: ensured?.id || null,
       });
       return jsonResponse(res, 200, {
         ok: true,
         action: "duplicate_delivery",
         conversationSynced: conversationSync.synced > 0,
         eventsUpdated: conversationSync.synced,
+        eventId: ensured?.id || conversationSync.primaryId || latestInConversation?.id || null,
         rawId,
       });
     }
 
-    const inbound = evaluateInboundWebhook({
-      priorEvent: latestInConversation,
-      priorThread,
-      mergedConversation,
-      incomingReplyMessage: parsed.lead.replyMessage,
-    });
+    if (!inbound.process) {
+      const ensured = await ensureFirstConversationVisible({
+        conversationId,
+        mergedConversation,
+        parsedLead: parsed.lead,
+        inbound,
+      });
+
+      if (ensured?.forceProcess) {
+        inbound = {
+          process: true,
+          reason: "first_conversation",
+          latestLeadReply: ensured.latestLeadReply,
+        };
+      } else if (ensured?.id) {
+        log("info", "webhook.synced_only", {
+          rawId,
+          conversationId,
+          eventId: ensured.id,
+          reason: inbound.reason,
+          ms: Date.now() - startedAt,
+        });
+        return jsonResponse(res, 200, {
+          ok: true,
+          action: "synced_only",
+          reason: inbound.reason,
+          eventId: ensured.id,
+          conversationSynced: conversationSync.synced > 0,
+          eventsUpdated: conversationSync.synced,
+          rawId,
+        });
+      }
+    }
 
     if (!inbound.process) {
       log("info", "webhook.skipped", {
@@ -171,22 +250,32 @@ export default async function handler(req, res) {
       });
     }
 
-    const sentiment = await classifyReplySentiment({
+    const triage = await classifyReply({
       replyMessage: leadWithHistory.replyMessage,
       yourMessage: leadWithHistory.yourMessage,
       leadName: leadWithHistory.fullName,
       companyName: leadWithHistory.companyName,
+      conversation: leadWithHistory.conversation,
     });
 
     let draftProjectId = "all";
     let project = { id: null, name: "All projects", source: "auto" };
     let draft = emptyDraft({ skipped: !isDraftGenerationEnabled() });
 
-    if (isDraftGenerationEnabled()) {
+    if (triage.requiresHuman) {
+      draft = emptyDraft({ skipped: true });
+      log("info", "webhook.needs_human", {
+        rawId,
+        conversationId,
+        category: triage.category,
+        actionItems: triage.actionItems,
+        reason: triage.handlingReason,
+      });
+    } else if (isDraftGenerationEnabled()) {
       try {
         const result = await generateDraftForLead({
           lead: leadWithHistory,
-          sentiment,
+          sentiment: triage,
         });
         draft = result.draft;
         draftProjectId = result.draftProjectId;
@@ -214,9 +303,15 @@ export default async function handler(req, res) {
           : null,
       messageType: leadWithHistory.messageType || leadWithHistory.eventType || null,
       sentiment: {
-        label: sentiment.sentiment,
-        isPositive: sentiment.isPositive,
-        reasoning: sentiment.reasoning,
+        label: triage.sentiment,
+        isPositive: triage.isPositive,
+        reasoning: triage.reasoning,
+      },
+      handling: {
+        requiresHuman: triage.requiresHuman,
+        category: triage.category,
+        actionItems: triage.actionItems,
+        reason: triage.handlingReason,
       },
       draftProjectId,
       project,
@@ -246,7 +341,9 @@ export default async function handler(req, res) {
       conversationId,
       eventId: record.id,
       synced: conversationSync.synced,
-      sentiment: sentiment.sentiment,
+      sentiment: triage.sentiment,
+      requiresHuman: triage.requiresHuman,
+      category: triage.category,
       ms: Date.now() - startedAt,
     });
 
@@ -256,7 +353,9 @@ export default async function handler(req, res) {
       eventId: record.id,
       conversationSynced: conversationSync.synced > 0,
       eventsUpdated: conversationSync.synced,
-      sentiment: sentiment.sentiment,
+      sentiment: triage.sentiment,
+      requiresHuman: triage.requiresHuman,
+      category: triage.category,
       draftEnabled: isDraftGenerationEnabled(),
       project: project.id ? { id: project.id, name: project.name } : null,
       rawId,
@@ -267,9 +366,6 @@ export default async function handler(req, res) {
       stack: error.stack,
       ms: Date.now() - startedAt,
     });
-    return jsonResponse(res, 500, {
-      error: "Internal server error",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Internal server error" });
   }
 }

@@ -1,5 +1,5 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
-import { getEvent, updateEvent } from "../lib/store.js";
+import { getEvent, updateEvent, serializeEvent } from "../lib/store.js";
 import { generateDraftReply } from "../lib/reply.js";
 import { draftFromGeneration } from "../lib/draft-pipeline.js";
 import { getProject } from "../lib/projects.js";
@@ -66,12 +66,9 @@ export default async function handler(req, res) {
       },
     });
 
-    return jsonResponse(res, 200, { ok: true, event: updated });
+    return jsonResponse(res, 200, { ok: true, event: serializeEvent(updated) });
   } catch (error) {
     console.error("regenerate-draft error:", error);
-    return jsonResponse(res, 500, {
-      error: "Failed to regenerate draft",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Failed to regenerate draft" });
   }
 }

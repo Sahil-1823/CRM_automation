@@ -40,6 +40,7 @@
         <div class="px-4 py-3 border-b border-slate-200 flex flex-wrap gap-1.5 text-xs">
           <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-md border border-slate-900 bg-slate-900 text-white">All</button>
           <button data-filter="pending_review" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Pending</button>
+          <button data-filter="needs_human" class="filter-btn px-2.5 py-1 rounded-md border border-amber-200 text-amber-800 hover:bg-amber-50">Needs human</button>
           <button data-filter="sent" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Sent</button>
           <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Dismissed</button>
         </div>
@@ -181,6 +182,9 @@
       projects: [],
       heyreachAccounts: [],
       heyreachCampaigns: [],
+      _eventsSig: "",
+      _threadSig: "",
+      _accountFilterSig: "",
     };
 
     const tagClass = "text-[11px] px-2 py-0.5 rounded border border-slate-200 text-slate-600 bg-white";
@@ -235,7 +239,7 @@
       }
     }
 
-    async function syncConversation(id, { silent = true } = {}) {
+    async function syncConversation(id, { silent = true, background = false } = {}) {
       if (!id) return null;
       try {
         const res = await fetch(`/api/sync-conversation?id=${encodeURIComponent(id)}`, {
@@ -246,13 +250,41 @@
         if (data.event) {
           const idx = state.events.findIndex((ev) => ev.id === id);
           if (idx >= 0) state.events[idx] = data.event;
-          if (state.selectedId === id) renderDetail(data.event, { skipSync: true });
+          state._eventsSig = eventsSignature(state.events);
+          if (state.selectedId === id) {
+            if (background) patchConversationThread(data.event);
+            else renderDetail(data.event, { skipSync: true, animate: false });
+          }
           return data.event;
         }
       } catch {
         if (!silent) toast("Could not refresh chat from HeyReach");
       }
       return null;
+    }
+
+    function conversationSignature(conversation) {
+      return JSON.stringify(
+        (conversation || []).map((m) => [m.from, m.text, m.at || "", m.atSource || ""]),
+      );
+    }
+
+    function eventsSignature(events) {
+      return (events || [])
+        .map(
+          (e) =>
+            `${e.id}|${e.updatedAt || e.createdAt}|${e.status}|${conversationSignature(conversationFromEvent(e))}`,
+        )
+        .join(";;");
+    }
+
+    function updateListSelection() {
+      document.querySelectorAll(".event-item").forEach((el) => {
+        const selected = el.dataset.id === state.selectedId;
+        el.classList.toggle("bg-slate-100", selected);
+        el.classList.toggle("border-l-2", selected);
+        el.classList.toggle("border-l-slate-900", selected);
+      });
     }
 
     const escapeHtml = (s) =>
@@ -367,8 +399,50 @@
       return `<span class="${tagClass}">${escapeHtml(name)}</span>`;
     };
 
+    const HANDLING_CATEGORY_LABELS = {
+      conversational: "Conversational",
+      info_request: "Info request",
+      action_required: "Action required",
+      sensitive: "Sensitive topic",
+      unsubscribe: "Unsubscribe / rejection",
+      unclear: "Unclear",
+    };
+
+    const needsHumanBadge = (e) => {
+      if (!e.handling?.requiresHuman) return "";
+      return `<span class="text-[11px] px-2 py-0.5 rounded border border-amber-300 text-amber-900 bg-amber-50">Needs human</span>`;
+    };
+
+    function formatHandlingCategory(category) {
+      return HANDLING_CATEGORY_LABELS[category] || category || "Unknown";
+    }
+
+    function renderHandlingCallout(e) {
+      if (!e.handling?.requiresHuman) return "";
+      const items = (e.handling.actionItems || []).filter(Boolean);
+      const itemsHtml = items.length
+        ? `<ul class="mt-2 list-disc list-inside space-y-1 text-sm text-amber-900">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+        : "";
+      return `
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5">
+          <div class="flex items-start gap-2">
+            <span class="text-amber-600 text-lg leading-none mt-0.5">⚠</span>
+            <div>
+              <h3 class="text-sm font-semibold text-amber-900">Needs human review</h3>
+              <p class="text-xs text-amber-800 mt-1">
+                <span class="font-medium">${escapeHtml(formatHandlingCategory(e.handling.category))}</span>
+                ${e.handling.reason ? ` — ${escapeHtml(e.handling.reason)}` : ""}
+              </p>
+              ${itemsHtml}
+              <p class="text-[11px] text-amber-700 mt-2">AI draft was skipped. Complete the action above, then reply manually or use Regenerate draft for a starting point.</p>
+            </div>
+          </div>
+        </div>`;
+    }
+
     function renderEventTags(e) {
       return [
+        needsHumanBadge(e),
         sentimentBadge(e.sentiment),
         messageTypeBadge(e),
         statusBadge(e.status),
@@ -529,6 +603,34 @@
       return thread;
     }
 
+    function renderThreadMessages(conversation) {
+      return (conversation || []).map((msg) => {
+        const isLead = msg.from === "lead";
+        const isUs = msg.from === "us";
+        const align = isUs ? "justify-end" : "justify-start";
+        const bubble = isUs
+          ? "bg-slate-900 text-white rounded-2xl rounded-br-md"
+          : isLead
+            ? "bg-slate-100 text-slate-900 border border-slate-200 rounded-2xl rounded-bl-md"
+            : "bg-amber-50 text-slate-800 border border-amber-200 rounded-2xl";
+        const label = isLead ? "Lead" : isUs ? "You" : "Message";
+        const labelClass = isUs ? "text-right" : "text-left";
+        const trustedSources = new Set(["heyreach_api", "heyreach_webhook", "dashboard_send"]);
+        const timeLabel = msg.at && trustedSources.has(msg.atSource) ? fmtDateTime(msg.at) : "";
+        const timeClass = isUs ? "text-slate-400" : "text-slate-400";
+        return `
+          <div class="flex ${align}">
+            <div class="max-w-[85%]">
+              <div class="text-[10px] text-slate-400 mb-1 px-1 ${labelClass} flex items-center gap-2 ${isUs ? "justify-end" : "justify-start"}">
+                <span>${escapeHtml(label)}</span>
+                ${timeLabel ? `<span class="${timeClass}">· ${escapeHtml(timeLabel)}</span>` : ""}
+              </div>
+              <div class="px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${bubble}">${escapeHtml(msg.text)}</div>
+            </div>
+          </div>`;
+      }).join("");
+    }
+
     function renderThread(conversation) {
       if (!conversation?.length) {
         return `<p class="text-sm text-slate-400">No conversation history available.</p>`;
@@ -536,32 +638,26 @@
 
       return `
         <div id="conversationThread" class="flex flex-col gap-3 h-64 sm:h-80 md:h-96 overflow-y-auto overflow-x-hidden scrollbar border border-slate-100 rounded-lg bg-slate-50/50 p-3">
-          ${conversation.map((msg) => {
-            const isLead = msg.from === "lead";
-            const isUs = msg.from === "us";
-            const align = isUs ? "justify-end" : "justify-start";
-            const bubble = isUs
-              ? "bg-slate-900 text-white rounded-2xl rounded-br-md"
-              : isLead
-                ? "bg-slate-100 text-slate-900 border border-slate-200 rounded-2xl rounded-bl-md"
-                : "bg-amber-50 text-slate-800 border border-amber-200 rounded-2xl";
-            const label = isLead ? "Lead" : isUs ? "You" : "Message";
-            const labelClass = isUs ? "text-right" : "text-left";
-            const trustedSources = new Set(["heyreach_api", "heyreach_webhook", "dashboard_send"]);
-            const timeLabel = msg.at && trustedSources.has(msg.atSource) ? fmtDateTime(msg.at) : "";
-            const timeClass = isUs ? "text-slate-400" : "text-slate-400";
-            return `
-              <div class="flex ${align}">
-                <div class="max-w-[85%]">
-                  <div class="text-[10px] text-slate-400 mb-1 px-1 ${labelClass} flex items-center gap-2 ${isUs ? "justify-end" : "justify-start"}">
-                    <span>${escapeHtml(label)}</span>
-                    ${timeLabel ? `<span class="${timeClass}">· ${escapeHtml(timeLabel)}</span>` : ""}
-                  </div>
-                  <div class="px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${bubble}">${escapeHtml(msg.text)}</div>
-                </div>
-              </div>`;
-          }).join("")}
+          ${renderThreadMessages(conversation)}
         </div>`;
+    }
+
+    function patchConversationThread(e) {
+      const conv = conversationFromEvent(e);
+      const sig = conversationSignature(conv);
+      if (sig === state._threadSig) return false;
+
+      const el = document.getElementById("conversationThread");
+      if (!el) return false;
+
+      state._threadSig = sig;
+      if (!conv?.length) {
+        el.innerHTML = `<p class="text-sm text-slate-400">No conversation history available.</p>`;
+      } else {
+        el.innerHTML = renderThreadMessages(conv);
+      }
+      scrollThreadToBottom();
+      return true;
     }
 
     function scrollThreadToBottom() {
@@ -655,20 +751,35 @@
       }
     }
 
-    async function loadEvents() {
+    async function loadEvents({ background = false } = {}) {
       const res = await fetch("/api/events?limit=200", { cache: "no-store" });
       const data = await res.json();
       state.events = data.events || [];
-      populateAccountFilter();
-      populateCampaignFilter();
-      renderList();
+      const newSig = eventsSignature(state.events);
+      const listChanged = newSig !== state._eventsSig;
+      state._eventsSig = newSig;
+
+      if (!background || listChanged) {
+        populateAccountFilter();
+        populateCampaignFilter();
+        renderList();
+      } else {
+        updateListSelection();
+      }
+
       if (state.selectedId) {
         const still = state.events.find((e) => e.id === state.selectedId);
         if (still) {
-          if (isMobileLayout()) state.mobileShowDetail = true;
-          updateMobilePanels();
-          renderDetail(still, { skipSync: true });
-          syncConversation(still.id);
+          if (!background) {
+            if (isMobileLayout()) state.mobileShowDetail = true;
+            updateMobilePanels();
+            renderDetail(still, { skipSync: true, animate: true });
+            syncConversation(still.id, { background: false });
+          } else {
+            patchConversationThread(still);
+            updateListSelection();
+            syncConversation(still.id, { background: true });
+          }
         }
       }
     }
@@ -682,6 +793,9 @@
         if (id != null) idSet.add(id);
       }
       const ids = [...idSet].sort((a, b) => a - b);
+      const sig = ids.join(",");
+      if (sig === state._accountFilterSig) return;
+      state._accountFilterSig = sig;
 
       select.innerHTML =
         `<option value="">All LinkedIn accounts</option>` +
@@ -718,7 +832,9 @@
       let filtered =
         state.filter === "all"
           ? state.events
-          : state.events.filter((e) => e.status === state.filter);
+          : state.filter === "needs_human"
+            ? state.events.filter((e) => e.handling?.requiresHuman)
+            : state.events.filter((e) => e.status === state.filter);
 
       if (state.accountFilter) {
         filtered = filtered.filter(
@@ -769,7 +885,7 @@
       });
     }
 
-    function renderDetail(e, { skipSync = false } = {}) {
+    function renderDetail(e, { skipSync = false, animate = true } = {}) {
       const lead = e.lead || {};
       const isPending = e.status === "pending_review";
       const draftReply = e.draft?.reply || "";
@@ -782,6 +898,15 @@
         ? `<p class="text-[11px] text-slate-500 mt-1">AI used general knowledge — retrieved docs were not relevant enough to cite.</p>`
         : "";
 
+      state._threadSig = conversationSignature(conversationFromEvent(e));
+
+      const requiresHuman = !!e.handling?.requiresHuman;
+      const draftSkippedNote = requiresHuman
+        ? `<p class="text-xs text-amber-800 mb-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Draft skipped — this reply needs a human (see action items above). Use Regenerate draft if you still want an AI starting point.</p>`
+        : e.draft?.skipped && !draftReply
+          ? `<p class="text-xs text-slate-500 mb-2">Draft generation is off. Set DRAFT_GENERATION_ENABLED=true to auto-draft on new replies, or use Regenerate draft.</p>`
+          : "";
+
       const projectOptions = [
         `<option value="none" ${selectedProjectId === "none" ? "selected" : ""}>None (no RAG context)</option>`,
         `<option value="all" ${selectedProjectId === "all" ? "selected" : ""}>All projects</option>`,
@@ -792,7 +917,7 @@
       ].join("");
 
       document.getElementById("detail").innerHTML = `
-        <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-5 fade-in">
+        <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-5${animate ? " fade-in" : ""}">
           <button id="mobileBackBtn" type="button" class="md:hidden mb-1 text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
             ← Back to list
           </button>
@@ -808,6 +933,8 @@
               ${accountId != null ? `<div><dt class="text-slate-400 inline">Account: </dt><dd class="inline">${escapeHtml(accountName || formatAccountLabel(accountId, e))}</dd></div>` : ""}
             </dl>
           </div>
+
+          ${renderHandlingCallout(e)}
 
           <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -841,7 +968,7 @@
               ${e.draft?.rationale ? `<span class="text-[11px] text-slate-400 italic">${escapeHtml(e.draft.rationale)}</span>` : ""}
             </div>
             ${e.draft?.error ? `<p class="text-xs text-slate-600 mb-2">${escapeHtml(e.draft.error)}</p>` : ""}
-            ${e.draft?.skipped && !draftReply ? `<p class="text-xs text-slate-500 mb-2">Draft generation is off. Set DRAFT_GENERATION_ENABLED=true to auto-draft on new replies, or use Regenerate draft.</p>` : ""}
+            ${draftSkippedNote}
             <textarea id="replyText" ${isPending ? "" : "readonly"}
               class="w-full min-h-[120px] p-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isPending ? "" : "bg-slate-50"}"
             >${escapeHtml(draftReply)}</textarea>
@@ -1393,14 +1520,8 @@
       });
     });
 
-    // AI Harness hidden for now
-    // document.getElementById("harnessBtn").addEventListener("click", () => {
-    //   window.location.href = "/harness.html";
-    // });
-
     document.getElementById("refreshBtn").addEventListener("click", async () => {
-      await loadEvents();
-      if (state.selectedId) await syncConversation(state.selectedId);
+      await loadEvents({ background: false });
     });
     document.getElementById("clearBtn").addEventListener("click", clearAllEvents);
 
@@ -1414,8 +1535,7 @@
     updateMobilePanels();
     window.addEventListener("resize", updateMobilePanels);
     setInterval(() => {
-      loadHeyReachMeta().then(() => loadEvents());
-      if (state.selectedId) syncConversation(state.selectedId);
+      loadHeyReachMeta().then(() => loadEvents({ background: true }));
     }, 30000);
   </script>
 </body>

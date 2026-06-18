@@ -4,6 +4,7 @@ import {
   findEventByConversationId,
   findAllEventsByConversationId,
   updateEvent,
+  serializeEvent,
 } from "../lib/store.js";
 import { requireAuth } from "../lib/auth.js";
 import {
@@ -78,15 +79,12 @@ export default async function handler(req, res) {
 
     return jsonResponse(res, 200, {
       ok: true,
-      event: refreshed,
+      event: serializeEvent(refreshed),
       messages: mergedConversation.length,
       eventsUpdated: sync.synced,
     });
   } catch (error) {
     console.error("sync-conversation error:", error);
-    return jsonResponse(res, 500, {
-      error: "Failed to sync conversation",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Failed to sync conversation" });
   }
 }

@@ -10,6 +10,7 @@ import {
   buildConversationOnlyPatch,
   syncAllLeadConversationEvents,
   appendOurMessage,
+  buildEnsuredConversationEvent,
 } from "../lib/conversation.js";
 
 test("enrichDisplayThread builds two-sided chat from sparse webhook data", () => {
@@ -297,4 +298,24 @@ test("syncAllLeadConversationEvents preserves sent event reply when newest is se
   assert.equal(updates.length, 1);
   assert.equal(updates[0].patch.lead.replyMessage, "Interested");
   assert.equal(updates[0].patch.lead.conversation.length, 4);
+});
+
+test("buildEnsuredConversationEvent creates dismissed record for synced thread", () => {
+  const patch = buildEnsuredConversationEvent({
+    mergedConversation: [
+      { from: "us", text: "Hello" },
+      { from: "lead", text: "Thanks" },
+    ],
+    parsedLead: {
+      fullName: "Jane Doe",
+      conversationId: "conv-1",
+      linkedInAccountId: 99,
+    },
+    inbound: { latestLeadReply: "Thanks" },
+  });
+
+  assert.ok(patch);
+  assert.equal(patch.status, "dismissed");
+  assert.equal(patch.lead.conversation.length, 2);
+  assert.equal(patch.lead.replyMessage, "Thanks");
 });

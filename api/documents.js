@@ -5,9 +5,7 @@ import {
   listDocuments,
   deleteDocument,
   getDocumentMarkdown,
-  isUsingVector,
 } from "../lib/rag.js";
-import { isUsingRedis } from "../lib/store.js";
 import { requireAuth } from "../lib/auth.js";
 import { convertFileToMarkdown } from "../lib/convert-to-md.js";
 
@@ -33,11 +31,7 @@ export default async function handler(req, res) {
       }
 
       const documents = await listDocuments();
-      return jsonResponse(res, 200, {
-        documents,
-        storage: isUsingRedis() ? "redis" : "none",
-        vector: isUsingVector() ? "upstash" : "redis-embeddings",
-      });
+      return jsonResponse(res, 200, { documents });
     }
 
     if (req.method === "POST") {
@@ -94,9 +88,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { error: "Method not allowed" });
   } catch (error) {
     console.error("documents api error:", error);
-    return jsonResponse(res, 500, {
-      error: "Internal server error",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Internal server error" });
   }
 }

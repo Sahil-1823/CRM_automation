@@ -24,7 +24,7 @@
       "destination": "/login.html"
     },
     {
-      "source": "/((?!api/|login\\.html|harness\\.html).*)",
+      "source": "/((?!api/|login\\.html).*)",
       "destination": "/index.html"
     }
   ]
