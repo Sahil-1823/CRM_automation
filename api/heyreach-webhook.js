@@ -176,25 +176,54 @@ export default async function handler(req, res) {
         inbound,
       });
 
+      // If we've already replied (in HeyReach or via dashboard) and a pending
+      // event still has a stale draft, auto-resolve it so the operator stops
+      // seeing a "Send via HeyReach" button for a reply they already handled.
+      let autoResolvedId = null;
+      if (
+        conversationId &&
+        inbound.reason === "already_replied" &&
+        !ensured?.forceProcess
+      ) {
+        const staleP = await findEventByConversationId(conversationId, {
+          status: "pending_review",
+        });
+        if (staleP) {
+          await updateEvent(staleP.id, {
+            status: "auto_resolved",
+            autoResolvedAt: new Date().toISOString(),
+            autoResolvedReason: "Reply already exists in HeyReach thread",
+            draft: emptyDraft({ skipped: true }),
+          });
+          autoResolvedId = staleP.id;
+          log("info", "webhook.auto_resolved", {
+            rawId,
+            conversationId,
+            eventId: staleP.id,
+          });
+        }
+      }
+
       if (ensured?.forceProcess) {
         inbound = {
           process: true,
           reason: "first_conversation",
           latestLeadReply: ensured.latestLeadReply,
         };
-      } else if (ensured?.id) {
+      } else if (ensured?.id || autoResolvedId) {
         log("info", "webhook.synced_only", {
           rawId,
           conversationId,
-          eventId: ensured.id,
+          eventId: ensured?.id || autoResolvedId,
           reason: inbound.reason,
+          autoResolved: !!autoResolvedId,
           ms: Date.now() - startedAt,
         });
         return jsonResponse(res, 200, {
           ok: true,
-          action: "synced_only",
+          action: autoResolvedId ? "auto_resolved" : "synced_only",
           reason: inbound.reason,
-          eventId: ensured.id,
+          eventId: ensured?.id || autoResolvedId,
           conversationSynced: conversationSync.synced > 0,
           eventsUpdated: conversationSync.synced,
           rawId,

@@ -129,3 +129,20 @@ test("shouldAutoSend allows clean positive draft", () => {
   });
   assert.equal(result.allowed, true);
 });
+
+test("serializeEvent exposes auto_resolved metadata", async () => {
+  const { serializeEvent } = await import("../lib/store.js");
+  const out = serializeEvent({
+    id: "evt1",
+    status: "auto_resolved",
+    createdAt: "2026-06-18T12:00:00.000Z",
+    autoResolvedAt: "2026-06-18T12:05:00.000Z",
+    autoResolvedReason: "Reply already exists in HeyReach thread",
+    lead: { fullName: "Jane Doe", conversation: [] },
+    draft: { reply: "", skipped: true },
+    sentiment: { label: "neutral" },
+  });
+  assert.equal(out.status, "auto_resolved");
+  assert.equal(out.autoResolvedReason, "Reply already exists in HeyReach thread");
+  assert.equal(out.autoResolvedAt, "2026-06-18T12:05:00.000Z");
+});
