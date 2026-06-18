@@ -292,7 +292,6 @@ export default async function handler(req, res) {
     let draft = emptyDraft({ skipped: !isDraftGenerationEnabled() });
 
     if (triage.requiresHuman) {
-      draft = emptyDraft({ skipped: true });
       log("info", "webhook.needs_human", {
         rawId,
         conversationId,
@@ -300,7 +299,9 @@ export default async function handler(req, res) {
         actionItems: triage.actionItems,
         reason: triage.handlingReason,
       });
-    } else if (isDraftGenerationEnabled()) {
+    }
+
+    if (isDraftGenerationEnabled()) {
       try {
         const result = await generateDraftForLead({
           lead: leadWithHistory,

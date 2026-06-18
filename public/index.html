@@ -455,7 +455,7 @@
                 ${e.handling.reason ? ` — ${escapeHtml(e.handling.reason)}` : ""}
               </p>
               ${itemsHtml}
-              <p class="text-[11px] text-amber-700 mt-2">AI draft was skipped. Complete the action above, then reply manually or use Regenerate draft for a starting point.</p>
+              <p class="text-[11px] text-amber-700 mt-2">Review the action items above before sending. A draft may be provided as a starting point — edit it to match what you actually need to do.</p>
             </div>
           </div>
         </div>`;
@@ -922,8 +922,10 @@
       state._threadSig = conversationSignature(conversationFromEvent(e));
 
       const requiresHuman = !!e.handling?.requiresHuman;
-      const draftSkippedNote = requiresHuman
-        ? `<p class="text-xs text-amber-800 mb-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Draft skipped — this reply needs a human (see action items above). Use Regenerate draft if you still want an AI starting point.</p>`
+      const draftSkippedNote = requiresHuman && draftReply
+        ? `<p class="text-xs text-amber-800 mb-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Needs human review before sending — see action items above. Edit the draft before you send; it will not auto-send.</p>`
+        : requiresHuman && e.draft?.skipped && !draftReply
+          ? `<p class="text-xs text-amber-800 mb-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Needs human review. Turn on DRAFT_GENERATION_ENABLED or use Regenerate draft for a starting point.</p>`
         : e.draft?.skipped && !draftReply
           ? `<p class="text-xs text-slate-500 mb-2">Draft generation is off. Set DRAFT_GENERATION_ENABLED=true to auto-draft on new replies, or use Regenerate draft.</p>`
           : "";
