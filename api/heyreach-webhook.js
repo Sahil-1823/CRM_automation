@@ -1,9 +1,4 @@
-import {
-  parseHeyReachPayload,
-  verifyHeyReachSecret,
-  fetchHeyReachChatroom,
-  mergeIncomingThreads,
-} from "../lib/heyreach.js";
+import { parseHeyReachPayload, verifyHeyReachSecret } from "../lib/heyreach.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
 import { classifyReplySentiment } from "../lib/sentiment.js";
 import {
@@ -24,12 +19,11 @@ import {
   evaluateInboundWebhook,
   syncAllLeadConversationEvents,
 } from "../lib/conversation.js";
+import { fetchEnrichedIncomingThread } from "../lib/conversation-sync.js";
 import {
   log,
   buildIdempotencyKey,
   claimIdempotencyKey,
-  readChatroomCache,
-  writeChatroomCache,
   archiveRawWebhook,
 } from "../lib/infra.js";
 
@@ -66,52 +60,13 @@ export default async function handler(req, res) {
     const linkedInAccountId = parsed.lead.linkedInAccountId || null;
     const eventType = parsed.lead.eventType || parsed.lead.messageType || null;
 
-    const idemKey = buildIdempotencyKey({
+    // Always refresh from HeyReach inbox API (cached 60s) so outbound replies
+    // sent directly in HeyReach appear in the admin chat.
+    const incomingThread = await fetchEnrichedIncomingThread({
       conversationId,
-      eventType,
-      latestText: parsed.lead.replyMessage,
-      fallbackBody: rawId,
+      linkedInAccountId,
+      webhookThread: parsed.lead.conversation,
     });
-    const firstSeen = await claimIdempotencyKey(idemKey);
-    if (!firstSeen) {
-      log("info", "webhook.duplicate_delivery", { rawId, idemKey, conversationId });
-      return jsonResponse(res, 200, { ok: true, action: "duplicate_delivery", rawId });
-    }
-
-    // Enrich thread only when sparse / missing trusted timestamps.
-    let incomingThread = parsed.lead.conversation;
-    const needsEnrichment =
-      !incomingThread?.length ||
-      incomingThread.length < 3 ||
-      !incomingThread.some((m) => m?.at);
-
-    if (conversationId && linkedInAccountId && needsEnrichment) {
-      const cached = await readChatroomCache(conversationId, linkedInAccountId);
-      if (cached?.length) {
-        incomingThread = mergeIncomingThreads(incomingThread, cached);
-        log("info", "chatroom.cache_hit", { conversationId, size: cached.length });
-      } else {
-        try {
-          const t0 = Date.now();
-          const apiThread = await fetchHeyReachChatroom({
-            conversationId,
-            linkedInAccountId,
-            timeoutMs: 4000,
-          });
-          log("info", "chatroom.fetched", {
-            conversationId,
-            size: apiThread.length,
-            ms: Date.now() - t0,
-          });
-          if (apiThread.length) {
-            await writeChatroomCache(conversationId, linkedInAccountId, apiThread);
-          }
-          incomingThread = mergeIncomingThreads(incomingThread, apiThread);
-        } catch (err) {
-          log("warn", "chatroom.fetch_failed", { conversationId, error: err.message });
-        }
-      }
-    }
 
     const latestInConversation = conversationId
       ? await findEventByConversationId(conversationId)
@@ -137,6 +92,29 @@ export default async function handler(req, res) {
           updateEvent,
         })
       : { synced: 0, primaryId: null };
+
+    const idemKey = buildIdempotencyKey({
+      conversationId,
+      eventType,
+      latestText: parsed.lead.replyMessage,
+      fallbackBody: rawId,
+    });
+    const firstSeen = await claimIdempotencyKey(idemKey);
+    if (!firstSeen) {
+      log("info", "webhook.duplicate_delivery", {
+        rawId,
+        idemKey,
+        conversationId,
+        synced: conversationSync.synced,
+      });
+      return jsonResponse(res, 200, {
+        ok: true,
+        action: "duplicate_delivery",
+        conversationSynced: conversationSync.synced > 0,
+        eventsUpdated: conversationSync.synced,
+        rawId,
+      });
+    }
 
     const inbound = evaluateInboundWebhook({
       priorEvent: latestInConversation,

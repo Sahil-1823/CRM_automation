@@ -14,36 +14,40 @@
     @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     details > summary { list-style: none; }
     details > summary::-webkit-details-marker { display: none; }
+    @media (max-width: 767px) {
+      .mobile-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+      .mobile-header-actions button { font-size: 0.75rem; padding: 0.375rem 0.625rem; }
+    }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 h-screen overflow-hidden">
+<body class="bg-slate-50 text-slate-900 h-[100dvh] overflow-hidden">
   <div class="h-full flex flex-col">
-    <header class="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between gap-4 shrink-0">
+    <header class="border-b border-slate-200 bg-white px-4 sm:px-6 py-3 flex items-center justify-between gap-3 shrink-0">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold">Admin dashboard</h1>
-        <p class="text-xs text-slate-500">HeyReach replies · review & send</p>
+        <h1 class="text-sm sm:text-base font-semibold">Admin dashboard</h1>
+        <p class="text-[11px] sm:text-xs text-slate-500">HeyReach replies · review & send</p>
       </div>
-      <div class="flex items-center gap-3 shrink-0">
+      <div class="flex items-center gap-2 shrink-0 mobile-header-actions">
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
-        <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge base</button>
-        <button id="clearBtn" class="text-sm px-3 py-1.5 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50">Clear all</button>
+        <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge</button>
+        <button id="clearBtn" class="text-sm px-3 py-1.5 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50">Clear</button>
         <button id="refreshBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Refresh</button>
       </div>
     </header>
 
-    <div class="flex-1 flex overflow-hidden">
-      <aside class="w-80 border-r border-slate-200 bg-white flex flex-col">
+    <div id="appLayout" class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+      <aside id="sidebar" class="w-full md:w-80 border-b md:border-b-0 md:border-r border-slate-200 bg-white flex flex-col min-h-0 md:shrink-0">
         <div class="px-4 py-3 border-b border-slate-200 flex flex-wrap gap-1.5 text-xs">
           <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-md border border-slate-900 bg-slate-900 text-white">All</button>
           <button data-filter="pending_review" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Pending</button>
           <button data-filter="sent" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Sent</button>
           <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Dismissed</button>
         </div>
-        <div id="list" class="flex-1 overflow-y-auto scrollbar"></div>
+        <div id="list" class="flex-1 overflow-y-auto scrollbar max-h-[40vh] md:max-h-none"></div>
       </aside>
 
-      <main class="flex-1 flex flex-col overflow-hidden bg-slate-50">
-        <div id="chatFilters" class="shrink-0 border-b border-slate-200 bg-white px-6 py-3 flex flex-wrap items-end gap-4">
+      <main id="mainPanel" class="flex-1 flex flex-col overflow-hidden bg-slate-50 min-h-0 hidden md:flex">
+        <div id="chatFilters" class="shrink-0 border-b border-slate-200 bg-white px-4 sm:px-6 py-3 flex flex-wrap items-end gap-3 sm:gap-4">
           <div class="min-w-[12rem] flex-1">
             <label class="text-[11px] text-slate-500 block mb-1">LinkedIn account</label>
             <select id="accountFilter" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">
@@ -170,6 +174,7 @@
     const state = {
       events: [],
       selectedId: null,
+      mobileShowDetail: false,
       filter: "all",
       accountFilter: "",
       campaignFilter: "",
@@ -205,6 +210,49 @@
 
     function getEventMessageType(e) {
       return e.messageType || e.lead?.messageType || e.lead?.eventType || null;
+    }
+
+    function isMobileLayout() {
+      return window.matchMedia("(max-width: 767px)").matches;
+    }
+
+    function updateMobilePanels() {
+      const sidebar = document.getElementById("sidebar");
+      const mainPanel = document.getElementById("mainPanel");
+      if (!sidebar || !mainPanel) return;
+
+      if (isMobileLayout()) {
+        const showDetail = state.mobileShowDetail && state.selectedId;
+        sidebar.classList.toggle("hidden", showDetail);
+        sidebar.classList.toggle("flex", !showDetail);
+        mainPanel.classList.toggle("hidden", !showDetail);
+        mainPanel.classList.toggle("flex", showDetail);
+      } else {
+        sidebar.classList.remove("hidden");
+        sidebar.classList.add("flex");
+        mainPanel.classList.remove("hidden");
+        mainPanel.classList.add("flex");
+      }
+    }
+
+    async function syncConversation(id, { silent = true } = {}) {
+      if (!id) return null;
+      try {
+        const res = await fetch(`/api/sync-conversation?id=${encodeURIComponent(id)}`, {
+          method: "POST",
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data.event) {
+          const idx = state.events.findIndex((ev) => ev.id === id);
+          if (idx >= 0) state.events[idx] = data.event;
+          if (state.selectedId === id) renderDetail(data.event, { skipSync: true });
+          return data.event;
+        }
+      } catch {
+        if (!silent) toast("Could not refresh chat from HeyReach");
+      }
+      return null;
     }
 
     const escapeHtml = (s) =>
@@ -487,7 +535,7 @@
       }
 
       return `
-        <div id="conversationThread" class="flex flex-col gap-3 h-80 sm:h-96 overflow-y-auto overflow-x-hidden scrollbar border border-slate-100 rounded-lg bg-slate-50/50 p-3">
+        <div id="conversationThread" class="flex flex-col gap-3 h-64 sm:h-80 md:h-96 overflow-y-auto overflow-x-hidden scrollbar border border-slate-100 rounded-lg bg-slate-50/50 p-3">
           ${conversation.map((msg) => {
             const isLead = msg.from === "lead";
             const isUs = msg.from === "us";
@@ -616,7 +664,12 @@
       renderList();
       if (state.selectedId) {
         const still = state.events.find((e) => e.id === state.selectedId);
-        if (still) renderDetail(still);
+        if (still) {
+          if (isMobileLayout()) state.mobileShowDetail = true;
+          updateMobilePanels();
+          renderDetail(still, { skipSync: true });
+          syncConversation(still.id);
+        }
       }
     }
 
@@ -705,14 +758,18 @@
         el.addEventListener("click", async () => {
           if (!state.projects.length) await loadProjects();
           state.selectedId = el.dataset.id;
+          state.mobileShowDetail = true;
+          updateMobilePanels();
           renderList();
           const ev = state.events.find((e) => e.id === state.selectedId);
-          if (ev) renderDetail(ev);
+          if (ev) {
+            renderDetail(ev);
+          }
         });
       });
     }
 
-    function renderDetail(e) {
+    function renderDetail(e, { skipSync = false } = {}) {
       const lead = e.lead || {};
       const isPending = e.status === "pending_review";
       const draftReply = e.draft?.reply || "";
@@ -735,8 +792,11 @@
       ].join("");
 
       document.getElementById("detail").innerHTML = `
-        <div class="max-w-2xl mx-auto p-6 space-y-5 fade-in">
-          <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-5 fade-in">
+          <button id="mobileBackBtn" type="button" class="md:hidden mb-1 text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
+            ← Back to list
+          </button>
+          <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
             <div class="flex justify-between gap-3 flex-wrap">
               <h2 class="text-xl font-semibold">${escapeHtml(lead.fullName || "Unknown")}</h2>
               <div class="flex flex-wrap gap-1.5">${renderEventTags(e)}</div>
@@ -749,12 +809,15 @@
             </dl>
           </div>
 
-          <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">Conversation</h3>
+          <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Conversation</h3>
+              <button id="syncChatBtn" type="button" class="text-xs px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Sync from HeyReach</button>
+            </div>
             ${renderThread(conversationFromEvent(e))}
           </div>
 
-          <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
             <div class="flex flex-wrap items-end justify-between gap-3">
               <div class="min-w-[200px] flex-1">
                 <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Project context</label>
@@ -799,8 +862,28 @@
         document.getElementById("regenerateBtn").addEventListener("click", () => regenerateDraft(e.id));
       }
 
+      document.getElementById("mobileBackBtn")?.addEventListener("click", () => {
+        state.mobileShowDetail = false;
+        updateMobilePanels();
+        renderList();
+      });
+
+      document.getElementById("syncChatBtn")?.addEventListener("click", async () => {
+        const btn = document.getElementById("syncChatBtn");
+        btn.disabled = true;
+        btn.textContent = "Syncing…";
+        await syncConversation(e.id, { silent: false });
+        btn.disabled = false;
+        btn.textContent = "Sync from HeyReach";
+        toast("Chat synced");
+      });
+
       wireRagDropdown(e.draft?.ragSources, e.draft?.citedSources);
       scrollThreadToBottom();
+
+      if (!skipSync && e.lead?.conversationId) {
+        syncConversation(e.id);
+      }
     }
 
     async function regenerateDraft(id) {
@@ -877,8 +960,11 @@
             const idx = state.events.findIndex((ev) => ev.id === id);
             if (idx >= 0) state.events[idx] = updated;
             state.selectedId = id;
+            state.mobileShowDetail = true;
+            updateMobilePanels();
             renderList();
-            renderDetail(updated);
+            renderDetail(updated, { skipSync: true });
+            await syncConversation(id);
           } else {
             await loadEvents();
           }
@@ -1312,7 +1398,10 @@
     //   window.location.href = "/harness.html";
     // });
 
-    document.getElementById("refreshBtn").addEventListener("click", loadEvents);
+    document.getElementById("refreshBtn").addEventListener("click", async () => {
+      await loadEvents();
+      if (state.selectedId) await syncConversation(state.selectedId);
+    });
     document.getElementById("clearBtn").addEventListener("click", clearAllEvents);
 
     document.getElementById("logoutBtn").addEventListener("click", async () => {
@@ -1322,8 +1411,11 @@
 
     loadHeyReachMeta().then(() => loadEvents());
     loadProjects();
+    updateMobilePanels();
+    window.addEventListener("resize", updateMobilePanels);
     setInterval(() => {
       loadHeyReachMeta().then(() => loadEvents());
+      if (state.selectedId) syncConversation(state.selectedId);
     }, 30000);
   </script>
 </body>

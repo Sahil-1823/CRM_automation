@@ -1,8 +1,17 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
-import { getEvent, updateEvent } from "../lib/store.js";
+import {
+  getEvent,
+  updateEvent,
+  findAllEventsByConversationId,
+} from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach.js";
 import { requireAuth } from "../lib/auth.js";
-import { enrichDisplayThread } from "../lib/conversation.js";
+import {
+  enrichDisplayThread,
+  appendOurMessage,
+  syncAllLeadConversationEvents,
+} from "../lib/conversation.js";
+import { invalidateChatroomCache } from "../lib/conversation-sync.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -28,6 +37,7 @@ export default async function handler(req, res) {
     }
 
     const lead = event.lead ?? {};
+    const conversationId = lead.conversationId || null;
     const linkedInAccountId =
       lead.linkedInAccountId ?? event.linkedInAccount?.linkedInAccountId ?? null;
 
@@ -44,13 +54,14 @@ export default async function handler(req, res) {
     });
 
     const sentAt = new Date().toISOString();
-    const conversation = enrichDisplayThread({
+    const baseThread = enrichDisplayThread({
       conversation: lead.conversation,
       yourMessage: lead.yourMessage,
       replyMessage: lead.replyMessage,
       sentReply: replyText,
       sentReplyAt: sentAt,
     });
+    const conversation = appendOurMessage(baseThread, replyText, sentAt, "dashboard_send");
 
     const updated = await updateEvent(id, {
       status: "sent",
@@ -60,7 +71,19 @@ export default async function handler(req, res) {
       lead: { ...lead, conversation },
     });
 
-    return jsonResponse(res, 200, { ok: true, event: updated });
+    if (conversationId) {
+      await invalidateChatroomCache(conversationId, linkedInAccountId);
+      await syncAllLeadConversationEvents({
+        conversationId,
+        mergedConversation: conversation,
+        parsedLead: lead,
+        findAllEvents: findAllEventsByConversationId,
+        updateEvent,
+      });
+    }
+
+    const refreshed = await getEvent(id);
+    return jsonResponse(res, 200, { ok: true, event: refreshed || updated });
   } catch (error) {
     console.error("send-reply error:", error);
     return jsonResponse(res, 500, {

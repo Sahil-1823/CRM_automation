@@ -9,6 +9,7 @@ import {
   buildConversationSyncPatch,
   buildConversationOnlyPatch,
   syncAllLeadConversationEvents,
+  appendOurMessage,
 } from "../lib/conversation.js";
 
 test("enrichDisplayThread builds two-sided chat from sparse webhook data", () => {
@@ -252,6 +253,17 @@ test("syncAllLeadConversationEvents updates every event for a conversation", asy
   assert.equal(updates[1].id, "evt_old");
   assert.equal(updates[1].patch.lead.replyMessage, "Old");
   assert.equal(updates[1].patch.lead.conversation.length, 3);
+});
+
+test("appendOurMessage adds outbound with dashboard_send metadata", () => {
+  const thread = appendOurMessage(
+    [{ from: "lead", text: "Hi" }],
+    "Thanks for reaching out",
+    "2026-06-10T12:00:00.000Z",
+  );
+  assert.equal(thread.length, 2);
+  assert.equal(thread[1].from, "us");
+  assert.equal(thread[1].atSource, "dashboard_send");
 });
 
 test("syncAllLeadConversationEvents preserves sent event reply when newest is sent", async () => {
