@@ -13,6 +13,9 @@ import {
   syncAllLeadConversationEvents,
 } from "../lib/conversation.js";
 import { invalidateChatroomCache } from "../lib/conversation-sync.js";
+import { createCalendarEvent } from "../lib/calendar/google.js";
+import { isGoogleCalendarConnected } from "../lib/calendar/store.js";
+import { isGoogleCalendarSchedulingMode } from "../lib/scheduling/config.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -55,6 +58,44 @@ export default async function handler(req, res) {
     });
 
     const sentAt = new Date().toISOString();
+    let scheduling = event.draft?.scheduling ? { ...event.draft.scheduling } : null;
+    let calendarEventId = scheduling?.calendarEventId || null;
+
+    if (scheduling?.pendingBook && isGoogleCalendarSchedulingMode()) {
+      try {
+        if (await isGoogleCalendarConnected()) {
+          const book = scheduling.pendingBook;
+          const calEvent = await createCalendarEvent({
+            summary: book.title,
+            description: book.description,
+            start: book.start,
+            end: book.end,
+            attendees: book.attendees || [],
+          });
+          calendarEventId = calEvent?.id || null;
+          scheduling = {
+            ...scheduling,
+            status: "booked",
+            calendarEventId,
+            meetLink: calEvent?.meetLink || null,
+            calendarError: null,
+          };
+        } else {
+          console.warn("send-reply: calendar not connected — LinkedIn message sent without booking");
+          scheduling = {
+            ...scheduling,
+            calendarError: "Google Calendar not connected — event was not created",
+          };
+        }
+      } catch (calErr) {
+        console.error("send-reply calendar error:", calErr);
+        scheduling = {
+          ...scheduling,
+          calendarError: calErr.message,
+        };
+      }
+    }
+
     const baseThread = enrichDisplayThread({
       conversation: lead.conversation,
       yourMessage: lead.yourMessage,
@@ -68,7 +109,7 @@ export default async function handler(req, res) {
       status: "sent",
       sentAt,
       sendResult: { reply: replyText, sentAt, heyreach: heyReachResult, linkedInAccountId },
-      draft: { ...(event.draft || {}), reply: replyText },
+      draft: { ...(event.draft || {}), reply: replyText, scheduling },
       lead: { ...lead, conversation },
     });
 

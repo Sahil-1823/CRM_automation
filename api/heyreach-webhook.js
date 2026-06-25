@@ -30,6 +30,17 @@ import {
   archiveRawWebhook,
 } from "../lib/infra.js";
 
+function getPriorProposedSlots(events) {
+  const sorted = [...(events || [])].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+  );
+  for (const ev of sorted) {
+    const slots = ev.draft?.scheduling?.proposedSlots;
+    if (Array.isArray(slots) && slots.length) return slots;
+  }
+  return [];
+}
+
 async function ensureFirstConversationVisible({
   conversationId,
   mergedConversation,
@@ -303,9 +314,17 @@ export default async function handler(req, res) {
 
     if (isDraftGenerationEnabled()) {
       try {
+        const convEvents = conversationId
+          ? await findAllEventsByConversationId(conversationId)
+          : [];
+        const priorProposedSlots = getPriorProposedSlots(convEvents);
         const result = await generateDraftForLead({
           lead: leadWithHistory,
           sentiment: triage,
+          priorProposedSlots,
+          campaignName: leadWithHistory.campaignName || null,
+          linkedInUrl: leadWithHistory.linkedInUrl || null,
+          conversationId,
         });
         draft = result.draft;
         draftProjectId = result.draftProjectId;

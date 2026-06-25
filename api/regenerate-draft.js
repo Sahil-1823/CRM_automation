@@ -1,9 +1,9 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
 import { getEvent, updateEvent, serializeEvent } from "../lib/store.js";
-import { generateDraftReply } from "../lib/reply.js";
-import { draftFromGeneration } from "../lib/draft-pipeline.js";
+import { draftFromGeneration, finalizeAgentDraftResult } from "../lib/draft-pipeline.js";
 import { getProject } from "../lib/projects.js";
 import { requireAuth } from "../lib/auth.js";
+import { runDraftAgent } from "../lib/agent/runner.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -21,7 +21,6 @@ export default async function handler(req, res) {
     if (!event) return jsonResponse(res, 404, { error: "Event not found" });
 
     const body = await readJsonBody(req);
-    // "all" = search all projects; specific id = that project + global docs
     const projectId = body.projectId === undefined ? event.draftProjectId ?? "all" : body.projectId;
 
     let project = null;
@@ -38,19 +37,27 @@ export default async function handler(req, res) {
 
     const lead = event.lead || {};
     const sentiment = event.sentiment || {};
-
-    const draft = await generateDraftReply({
-      replyMessage: lead.replyMessage,
-      yourMessage: lead.yourMessage,
-      leadName: lead.fullName,
-      companyName: lead.companyName,
-      jobTitle: lead.jobTitle,
-      sentiment: sentiment.label,
+    const triage = {
+      sentiment: sentiment.label || "neutral",
       isPositive: sentiment.isPositive,
-      conversation: lead.conversation,
-      project,
-      projectScope,
+      category: event.handling?.category || "conversational",
+      schedulingIntent: event.handling?.category === "scheduling",
+    };
+
+    const priorProposedSlots = event.draft?.scheduling?.proposedSlots || [];
+
+    const result = await runDraftAgent({
+      lead,
+      triage,
+      priorProposedSlots,
+      campaignName: event.campaign?.name || lead.campaignName,
+      linkedInUrl: lead.linkedInUrl || null,
+      conversationId: lead.conversationId || null,
+      projectOverride: project,
+      projectScopeOverride: projectScope,
     });
+
+    const finalized = finalizeAgentDraftResult(result);
 
     const updated = await updateEvent(id, {
       draftProjectId:
@@ -61,9 +68,7 @@ export default async function handler(req, res) {
           : project
             ? { id: project.id, name: project.name, source: "manual" }
             : { id: null, name: "All projects", source: "manual" },
-      draft: {
-        ...draftFromGeneration(draft),
-      },
+      draft: finalized.draft,
     });
 
     return jsonResponse(res, 200, { ok: true, event: serializeEvent(updated) });

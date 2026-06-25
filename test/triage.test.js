@@ -130,6 +130,52 @@ test("shouldAutoSend allows clean positive draft", () => {
   assert.equal(result.allowed, true);
 });
 
+test("normalizeTriage allows scheduling replies", () => {
+  const result = normalizeTriage({
+    sentiment: "positive",
+    reasoning: "Wants a call Tuesday",
+    category: "scheduling",
+    handling: "auto_ok",
+    actionItems: [],
+    handlingReason: "Meeting request",
+  });
+
+  assert.equal(result.requiresHuman, false);
+  assert.equal(result.category, "scheduling");
+  assert.equal(result.schedulingIntent, true);
+});
+
+test("serializeEvent exposes draft.scheduling", async () => {
+  const { serializeEvent } = await import("../lib/store.js");
+  const out = serializeEvent({
+    id: "evt2",
+    status: "pending_review",
+    createdAt: "2026-06-18T12:00:00.000Z",
+    lead: { fullName: "Jane Doe", conversation: [] },
+    draft: {
+      reply: "Thursday works",
+      scheduling: {
+        intent: true,
+        status: "ready_to_book",
+        requestedTime: "2026-06-20T09:30:00.000Z",
+        proposedSlots: [],
+        pendingBook: {
+          start: "2026-06-20T09:30:00.000Z",
+          end: "2026-06-20T10:00:00.000Z",
+          title: "Call with Jane",
+          label: "Fri 3pm",
+        },
+        calendarEventId: null,
+      },
+      agentTrace: [{ tool: "checkAvailability", result: { available: true } }],
+    },
+    sentiment: { label: "positive" },
+  });
+  assert.equal(out.draft.scheduling.status, "ready_to_book");
+  assert.equal(out.draft.scheduling.pendingBook.title, "Call with Jane");
+  assert.equal(out.draft.agentTrace.length, 1);
+});
+
 test("serializeEvent exposes auto_resolved metadata", async () => {
   const { serializeEvent } = await import("../lib/store.js");
   const out = serializeEvent({

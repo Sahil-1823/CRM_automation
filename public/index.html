@@ -28,6 +28,7 @@
         <p class="text-[11px] sm:text-xs text-slate-500">HeyReach replies · review & send</p>
       </div>
       <div class="flex items-center gap-2 shrink-0 mobile-header-actions">
+        <button id="gcalBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600" title="Connect Google Calendar for meeting scheduling">Connect Calendar</button>
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
         <button id="rawBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600" title="Inspect raw HeyReach webhooks">Webhooks</button>
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge</button>
@@ -202,6 +203,7 @@
       projects: [],
       heyreachAccounts: [],
       heyreachCampaigns: [],
+      googleCalendar: { configured: false, connected: false, email: null },
       _eventsSig: "",
       _threadSig: "",
       _accountFilterSig: "",
@@ -686,6 +688,53 @@
       if (el) el.scrollTop = el.scrollHeight;
     }
 
+    function renderSchedulingPanel(scheduling, agentTrace) {
+      if (!scheduling?.intent) return "";
+
+      const statusLabels = {
+        calendly_link_sent: "Calendly link included",
+        ready_to_book: "Slot available — will book on send",
+        suggest_alternatives: "Busy — alternatives suggested",
+        awaiting_confirmation: "Awaiting lead confirmation",
+        booked: "Calendar event created",
+        calendar_disconnected: "Calendar not connected",
+        error: "Calendar check failed",
+      };
+
+      const isCalendly = scheduling.mode === "calendly";
+
+      const status = scheduling.status || "awaiting_confirmation";
+      const statusLabel = statusLabels[status] || status;
+      const pending = scheduling.pendingBook;
+      const slots = scheduling.proposedSlots || [];
+      const trace = agentTrace || [];
+
+      return `
+        <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <h3 class="text-xs font-semibold text-indigo-900 uppercase tracking-wide">Scheduling</h3>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-indigo-200 text-indigo-800">${escapeHtml(statusLabel)}</span>
+          </div>
+          ${scheduling.calendlyLink ? `<p class="text-xs text-indigo-900"><span class="font-medium">Calendly:</span> <a href="${escapeHtml(scheduling.calendlyLink)}" target="_blank" rel="noopener noreferrer" class="underline break-all">${escapeHtml(scheduling.calendlyLink)}</a></p>` : ""}
+          ${!isCalendly && pending ? `<p class="text-xs text-indigo-900"><span class="font-medium">Proposed meeting:</span> ${escapeHtml(pending.label || pending.start)}</p>` : ""}
+          ${!isCalendly && scheduling.requestedTime && !pending ? `<p class="text-xs text-indigo-800">Requested: ${escapeHtml(scheduling.requestedTime)}</p>` : ""}
+          ${!isCalendly && slots.length ? `
+            <div class="text-xs text-indigo-900">
+              <p class="font-medium mb-1">Alternative slots</p>
+              <ul class="list-disc list-inside space-y-0.5">
+                ${slots.map((s) => `<li>${escapeHtml(s.label || s.start)}</li>`).join("")}
+              </ul>
+            </div>
+          ` : ""}
+          ${!isCalendly && scheduling.calendarEventId ? `<p class="text-xs text-emerald-800">Event ID: ${escapeHtml(scheduling.calendarEventId)}</p>` : ""}
+          ${!isCalendly && scheduling.meetLink ? `<p class="text-xs text-emerald-800"><span class="font-medium">Google Meet:</span> <a href="${escapeHtml(scheduling.meetLink)}" target="_blank" rel="noopener noreferrer" class="underline break-all">${escapeHtml(scheduling.meetLink)}</a></p>` : ""}
+          ${scheduling.calendarError ? `<p class="text-xs text-rose-700">${escapeHtml(scheduling.calendarError)}</p>` : ""}
+          ${isCalendly ? `<p class="text-[11px] text-indigo-700">The Calendly link is appended to the draft automatically when scheduling is detected.</p>` : ""}
+          ${!isCalendly && pending && status === "ready_to_book" ? `<p class="text-[11px] text-indigo-700">A Google Calendar invite with a Meet link will be created when you click Send.</p>` : ""}
+          ${trace.length ? `<p class="text-[11px] text-indigo-600">${escapeHtml(trace.map((t) => t.tool).join(" → "))}</p>` : ""}
+        </div>`;
+    }
+
     function renderRagPanel(sources, citedSources) {
       const count = sources?.length || 0;
       const summary = count
@@ -989,6 +1038,7 @@
 
           <div class="bg-white rounded-xl border border-slate-200 p-5">
             ${renderRagPanel(e.draft?.ragSources, e.draft?.citedSources)}
+            ${renderSchedulingPanel(e.draft?.scheduling, e.draft?.agentTrace)}
             ${groundingNote}
           </div>
 
@@ -1633,15 +1683,83 @@
     });
     document.getElementById("clearBtn").addEventListener("click", clearAllEvents);
 
+    async function loadGoogleCalendarStatus() {
+      try {
+        const res = await fetch("/api/auth/google-status");
+        if (!res.ok) return;
+        const data = await res.json();
+        state.googleCalendar = {
+          configured: !!data.configured,
+          connected: !!data.connected,
+          email: data.email || null,
+        };
+        updateGoogleCalendarButton();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function updateGoogleCalendarButton() {
+      const btn = document.getElementById("gcalBtn");
+      if (!btn) return;
+      const { configured, connected, email } = state.googleCalendar;
+      if (!configured) {
+        btn.textContent = "Calendar (not configured)";
+        btn.disabled = true;
+        btn.title = "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server";
+        return;
+      }
+      btn.disabled = false;
+      if (connected) {
+        btn.textContent = email ? `Calendar: ${email}` : "Calendar connected";
+        btn.title = "Click to disconnect Google Calendar";
+      } else {
+        btn.textContent = "Connect Calendar";
+        btn.title = "Connect Google Calendar for meeting scheduling";
+      }
+    }
+
+    document.getElementById("gcalBtn").addEventListener("click", async () => {
+      const { configured, connected } = state.googleCalendar;
+      if (!configured) {
+        toast("Google Calendar OAuth is not configured on the server");
+        return;
+      }
+      if (connected) {
+        if (!confirm("Disconnect Google Calendar?")) return;
+        const res = await fetch("/api/auth/google?action=disconnect");
+        if (res.ok) {
+          toast("Google Calendar disconnected");
+          await loadGoogleCalendarStatus();
+        } else {
+          toast("Could not disconnect calendar");
+        }
+        return;
+      }
+      window.location.href = "/api/auth/google?action=connect";
+    });
+
     document.getElementById("logoutBtn").addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login.html";
     });
 
+    loadGoogleCalendarStatus();
     loadHeyReachMeta().then(() => loadEvents());
     loadProjects();
     updateMobilePanels();
     window.addEventListener("resize", updateMobilePanels);
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("gcal_connected") === "1") {
+      toast("Google Calendar connected");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (urlParams.get("gcal_error")) {
+      toast(`Calendar connect failed: ${urlParams.get("gcal_error")}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     setInterval(() => {
       loadHeyReachMeta().then(() => loadEvents({ background: true }));
     }, 30000);
