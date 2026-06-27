@@ -14,10 +14,16 @@
     }
   ],
   "functions": {
-    "api/**/*.js": {
+    "api/[...path].js": {
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/renew-gmail-watches",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/login",

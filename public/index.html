@@ -28,7 +28,9 @@
         <p class="text-[11px] sm:text-xs text-slate-500">HeyReach replies · review & send</p>
       </div>
       <div class="flex items-center gap-2 shrink-0 mobile-header-actions">
+        <!-- Google Calendar OAuth disabled — see lib/disabled/calendar-api/
         <button id="gcalBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600" title="Connect Google Calendar for meeting scheduling">Connect Calendar</button>
+        -->
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
         <button id="rawBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600" title="Inspect raw HeyReach webhooks">Webhooks</button>
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge</button>
@@ -1683,82 +1685,24 @@
     });
     document.getElementById("clearBtn").addEventListener("click", clearAllEvents);
 
-    async function loadGoogleCalendarStatus() {
-      try {
-        const res = await fetch("/api/auth/google-status");
-        if (!res.ok) return;
-        const data = await res.json();
-        state.googleCalendar = {
-          configured: !!data.configured,
-          connected: !!data.connected,
-          email: data.email || null,
-        };
-        updateGoogleCalendarButton();
-      } catch {
-        /* ignore */
-      }
-    }
-
-    function updateGoogleCalendarButton() {
-      const btn = document.getElementById("gcalBtn");
-      if (!btn) return;
-      const { configured, connected, email } = state.googleCalendar;
-      if (!configured) {
-        btn.textContent = "Calendar (not configured)";
-        btn.disabled = true;
-        btn.title = "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server";
-        return;
-      }
-      btn.disabled = false;
-      if (connected) {
-        btn.textContent = email ? `Calendar: ${email}` : "Calendar connected";
-        btn.title = "Click to disconnect Google Calendar";
-      } else {
-        btn.textContent = "Connect Calendar";
-        btn.title = "Connect Google Calendar for meeting scheduling";
-      }
-    }
-
-    document.getElementById("gcalBtn").addEventListener("click", async () => {
-      const { configured, connected } = state.googleCalendar;
-      if (!configured) {
-        toast("Google Calendar OAuth is not configured on the server");
-        return;
-      }
-      if (connected) {
-        if (!confirm("Disconnect Google Calendar?")) return;
-        const res = await fetch("/api/auth/google?action=disconnect");
-        if (res.ok) {
-          toast("Google Calendar disconnected");
-          await loadGoogleCalendarStatus();
-        } else {
-          toast("Could not disconnect calendar");
-        }
-        return;
-      }
-      window.location.href = "/api/auth/google?action=connect";
-    });
+    /* Google Calendar UI disabled — restore api/auth/google.js + google-status.js
+    async function loadGoogleCalendarStatus() { ... }
+    function updateGoogleCalendarButton() { ... }
+    document.getElementById("gcalBtn").addEventListener("click", async () => { ... });
+    loadGoogleCalendarStatus();
+    if (urlParams.get("gcal_connected") === "1") { ... }
+    if (urlParams.get("gcal_error")) { ... }
+    */
 
     document.getElementById("logoutBtn").addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login.html";
     });
 
-    loadGoogleCalendarStatus();
     loadHeyReachMeta().then(() => loadEvents());
     loadProjects();
     updateMobilePanels();
     window.addEventListener("resize", updateMobilePanels);
-
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("gcal_connected") === "1") {
-      toast("Google Calendar connected");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    if (urlParams.get("gcal_error")) {
-      toast(`Calendar connect failed: ${urlParams.get("gcal_error")}`);
-      window.history.replaceState({}, "", window.location.pathname);
-    }
 
     setInterval(() => {
       loadHeyReachMeta().then(() => loadEvents({ background: true }));

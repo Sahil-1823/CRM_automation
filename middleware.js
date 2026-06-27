@@ -5,6 +5,9 @@ const PUBLIC_PATHS = new Set(["/login.html", "/login", "/favicon.ico"]);
 function isPublicApi(pathname) {
   return (
     pathname === "/api/heyreach-webhook" ||
+    pathname === "/api/gmail/webhook" ||
+    pathname.startsWith("/api/gmail/oauth") ||
+    pathname === "/api/cron/renew-gmail-watches" ||
     pathname.startsWith("/api/auth/")
   );
 }
