@@ -1,5 +1,5 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
-import { listEvents, getEvent, updateEvent, clearAllEvents, isUsingRedis } from "../lib/store.js";
+import { listEvents, getEvent, updateEvent, clearAllEvents, isUsingRedis, serializeEvent, serializeEvents } from "../lib/store.js";
 import { requireAuth } from "../lib/auth.js";
 
 export default async function handler(req, res) {
@@ -12,13 +12,14 @@ export default async function handler(req, res) {
       if (id) {
         const event = await getEvent(id);
         if (!event) return jsonResponse(res, 404, { error: "Not found" });
-        return jsonResponse(res, 200, { event });
+        return jsonResponse(res, 200, { event: serializeEvent(event) });
       }
       const status = url.searchParams.get("status") || undefined;
+      const channel = url.searchParams.get("channel") || undefined;
       const limit = Number(url.searchParams.get("limit") || 100);
-      const events = await listEvents({ status, limit });
+      const events = await listEvents({ status, channel, limit });
       return jsonResponse(res, 200, {
-        events,
+        events: serializeEvents(events),
         storage: isUsingRedis() ? "redis" : "file",
       });
     }
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
       if (typeof body.status === "string") patch.status = body.status;
 
       const updated = await updateEvent(id, patch);
-      return jsonResponse(res, 200, { event: updated });
+      return jsonResponse(res, 200, { event: serializeEvent(updated) });
     }
 
     if (req.method === "DELETE") {
@@ -57,9 +58,6 @@ export default async function handler(req, res) {
     return jsonResponse(res, 405, { error: "Method not allowed" });
   } catch (error) {
     console.error("events api error:", error);
-    return jsonResponse(res, 500, {
-      error: "Internal server error",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Internal server error" });
   }
 }

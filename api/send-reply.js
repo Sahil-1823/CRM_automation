@@ -1,5 +1,5 @@
 import { jsonResponse, readJsonBody } from "../lib/http.js";
-import { getEvent, updateEvent } from "../lib/store.js";
+import { getEvent, updateEvent, serializeEvent } from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach.js";
 import { requireAuth } from "../lib/auth.js";
 import { enrichDisplayThread } from "../lib/conversation.js";
@@ -18,6 +18,9 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
     const event = await getEvent(id);
     if (!event) return jsonResponse(res, 404, { error: "Event not found" });
+    if (event.channel === "gmail") {
+      return jsonResponse(res, 400, { error: "Use /api/gmail/send-reply for Gmail events" });
+    }
     if (event.status === "sent") {
       return jsonResponse(res, 409, { error: "Event already sent" });
     }
@@ -60,12 +63,9 @@ export default async function handler(req, res) {
       lead: { ...lead, conversation },
     });
 
-    return jsonResponse(res, 200, { ok: true, event: updated });
+    return jsonResponse(res, 200, { ok: true, event: serializeEvent(updated) });
   } catch (error) {
     console.error("send-reply error:", error);
-    return jsonResponse(res, 500, {
-      error: "Failed to send via HeyReach",
-      message: error.message,
-    });
+    return jsonResponse(res, 500, { error: "Failed to send via HeyReach" });
   }
 }

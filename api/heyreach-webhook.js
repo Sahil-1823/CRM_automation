@@ -5,7 +5,7 @@ import {
   mergeIncomingThreads,
 } from "../lib/heyreach.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
-import { classifyReplySentiment } from "../lib/sentiment.js";
+import { classifyReply } from "../lib/sentiment.js";
 import {
   isDraftGenerationEnabled,
   generateDraftForLead,
@@ -193,11 +193,12 @@ export default async function handler(req, res) {
       });
     }
 
-    const sentiment = await classifyReplySentiment({
+    const triage = await classifyReply({
       replyMessage: leadWithHistory.replyMessage,
       yourMessage: leadWithHistory.yourMessage,
       leadName: leadWithHistory.fullName,
       companyName: leadWithHistory.companyName,
+      conversation: leadWithHistory.conversation,
     });
 
     let draftProjectId = "all";
@@ -208,7 +209,7 @@ export default async function handler(req, res) {
       try {
         const result = await generateDraftForLead({
           lead: leadWithHistory,
-          sentiment,
+          sentiment: triage,
         });
         draft = result.draft;
         draftProjectId = result.draftProjectId;
@@ -220,6 +221,7 @@ export default async function handler(req, res) {
     }
 
     const eventPatch = {
+      channel: "heyreach",
       lead: leadWithHistory,
       linkedInAccount: leadWithHistory.linkedInAccountId
         ? {
@@ -236,9 +238,15 @@ export default async function handler(req, res) {
           : null,
       messageType: leadWithHistory.messageType || leadWithHistory.eventType || null,
       sentiment: {
-        label: sentiment.sentiment,
-        isPositive: sentiment.isPositive,
-        reasoning: sentiment.reasoning,
+        label: triage.sentiment,
+        isPositive: triage.isPositive,
+        reasoning: triage.reasoning,
+      },
+      handling: {
+        requiresHuman: triage.requiresHuman,
+        category: triage.category,
+        actionItems: triage.actionItems,
+        reason: triage.handlingReason,
       },
       draftProjectId,
       project,
@@ -268,7 +276,7 @@ export default async function handler(req, res) {
       conversationId,
       eventId: record.id,
       synced: conversationSync.synced,
-      sentiment: sentiment.sentiment,
+      sentiment: triage.sentiment,
       ms: Date.now() - startedAt,
     });
 
@@ -278,7 +286,7 @@ export default async function handler(req, res) {
       eventId: record.id,
       conversationSynced: conversationSync.synced > 0,
       eventsUpdated: conversationSync.synced,
-      sentiment: sentiment.sentiment,
+      sentiment: triage.sentiment,
       draftEnabled: isDraftGenerationEnabled(),
       project: project.id ? { id: project.id, name: project.name } : null,
       rawId,
