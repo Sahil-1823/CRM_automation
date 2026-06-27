@@ -1,7 +1,7 @@
-import { jsonResponse } from "../../http.js";
-import { listGmailAccounts, getGmailAccount, updateGmailAccount } from "../../gmail/store.js";
-import { watchInbox } from "../../gmail/oauth.js";
-import { getGmailConfig } from "../../gmail/config.js";
+import { jsonResponse } from "../../lib/http.js";
+import { listGmailAccounts, getGmailAccount, updateGmailAccount } from "../../lib/gmail/store.js";
+import { watchInbox } from "../../lib/gmail/oauth.js";
+import { getGmailConfig } from "../../lib/gmail/config.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

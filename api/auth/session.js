@@ -1,5 +1,5 @@
-import { jsonResponse } from "../http.js";
-import { requireAuth } from "../auth.js";
+import { jsonResponse } from "../../lib/http.js";
+import { requireAuth } from "../../lib/auth.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

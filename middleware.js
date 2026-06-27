@@ -2,14 +2,16 @@ import { verifySessionToken, parseCookie, SESSION_COOKIE } from "./lib/auth.js";
 
 const PUBLIC_PATHS = new Set(["/login.html", "/login", "/favicon.ico"]);
 
+const PUBLIC_API = [
+  /^\/api\/auth\//,
+  /^\/api\/gmail\/oauth/,
+  /^\/api\/gmail\/webhook$/,
+  /^\/api\/heyreach-webhook$/,
+  /^\/api\/cron\//,
+];
+
 function isPublicApi(pathname) {
-  return (
-    pathname === "/api/heyreach-webhook" ||
-    pathname === "/api/gmail/webhook" ||
-    pathname.startsWith("/api/gmail/oauth") ||
-    pathname === "/api/cron/renew-gmail-watches" ||
-    pathname.startsWith("/api/auth/")
-  );
+  return PUBLIC_API.some((pattern) => pattern.test(pathname));
 }
 
 export default async function middleware(request) {

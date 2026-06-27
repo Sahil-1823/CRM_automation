@@ -6,8 +6,8 @@ import {
   verifyHeyReachSecret,
   parseChatroomToThread,
   mergeIncomingThreads,
-} from "../lib/heyreach.js";
-import { isFilterableCampaignStatus } from "../lib/heyreach-meta.js";
+} from "../lib/heyreach/client.js";
+import { isFilterableCampaignStatus } from "../lib/heyreach/meta.js";
 
 test("parseHeyReachPayload accepts common HeyReach shapes", () => {
   const parsed = parseHeyReachPayload({

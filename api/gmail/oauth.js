@@ -1,23 +1,23 @@
-import { jsonResponse } from "../../http.js";
-import { requireAuth, parseCookie, verifySessionToken } from "../../auth.js";
+import { jsonResponse } from "../../lib/http.js";
+import { requireAuth, parseCookie, verifySessionToken } from "../../lib/auth.js";
 import {
   getGmailRedirectUri,
   GMAIL_SCOPES,
   isGmailOAuthConfigured,
   getGmailConfig,
-} from "../../gmail/config.js";
+} from "../../lib/gmail/config.js";
 import {
   exchangeCodeForTokens,
   fetchGoogleUserEmail,
   watchInbox,
   stopWatch,
-} from "../../gmail/oauth.js";
+} from "../../lib/gmail/oauth.js";
 import {
   saveGmailAccount,
   removeGmailAccount,
   saveOAuthState,
   consumeOAuthState,
-} from "../../gmail/store.js";
+} from "../../lib/gmail/store.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

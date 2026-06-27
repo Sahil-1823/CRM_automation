@@ -1,18 +1,18 @@
-import { parseHeyReachPayload, verifyHeyReachSecret } from "../heyreach.js";
-import { readJsonBody, jsonResponse } from "../http.js";
-import { classifyReply } from "../sentiment.js";
+import { parseHeyReachPayload, verifyHeyReachSecret } from "../lib/heyreach/client.js";
+import { readJsonBody, jsonResponse } from "../lib/http.js";
+import { classifyReply } from "../lib/sentiment.js";
 import {
   isDraftGenerationEnabled,
   generateDraftForLead,
   emptyDraft,
-} from "../draft-pipeline.js";
+} from "../lib/draft-pipeline.js";
 import {
   saveEvent,
   findEventByConversationId,
   findAllEventsByConversationId,
   updateEvent,
-} from "../store.js";
-import { getConfig } from "../config.js";
+} from "../lib/store.js";
+import { getConfig } from "../lib/config.js";
 import {
   conversationFromEvent,
   mergeWebhookConversation,
@@ -21,14 +21,14 @@ import {
   buildEnsuredConversationEvent,
   isAwaitingLeadReply,
   latestLeadMessage,
-} from "../conversation.js";
-import { fetchEnrichedIncomingThread } from "../conversation-sync.js";
+} from "../lib/conversation/index.js";
+import { fetchEnrichedIncomingThread } from "../lib/conversation/sync.js";
 import {
   log,
   buildIdempotencyKey,
   claimIdempotencyKey,
   archiveRawWebhook,
-} from "../infra.js";
+} from "../lib/infra.js";
 
 function getPriorProposedSlots(events) {
   const sorted = [...(events || [])].sort(

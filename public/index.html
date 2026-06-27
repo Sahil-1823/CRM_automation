@@ -23,10 +23,7 @@
 <body class="bg-slate-50 text-slate-900 h-[100dvh] overflow-hidden">
   <div class="h-full flex flex-col">
     <header class="border-b border-slate-200 bg-white px-4 sm:px-6 py-3 flex items-center justify-between gap-3 shrink-0">
-      <div class="min-w-0">
-        <h1 class="text-sm sm:text-base font-semibold">Admin dashboard</h1>
-        <p class="text-[11px] sm:text-xs text-slate-500">HeyReach replies · review & send</p>
-      </div>
+     
       <div class="flex items-center gap-2 shrink-0 mobile-header-actions">
         <!-- Google Calendar OAuth disabled — see lib/disabled/calendar-api/
         <button id="gcalBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600" title="Connect Google Calendar for meeting scheduling">Connect Calendar</button>
@@ -283,7 +280,7 @@
     async function syncConversation(id, { silent = true, background = false } = {}) {
       if (!id) return null;
       try {
-        const res = await fetch(`/api/sync-conversation?id=${encodeURIComponent(id)}`, {
+        const res = await fetch(`/api/dashboard/sync-conversation?id=${encodeURIComponent(id)}`, {
           method: "POST",
         });
         if (!res.ok) return null;
@@ -518,7 +515,7 @@
         throw new Error(`${file.name}: max file size is 5 MB`);
       }
       const base64 = await fileToBase64(file);
-      const res = await fetch("/api/documents", {
+      const res = await fetch("/api/dashboard/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -830,7 +827,7 @@
 
     async function loadHeyReachMeta() {
       try {
-        const res = await fetch("/api/heyreach-meta");
+        const res = await fetch("/api/dashboard/heyreach-meta");
         if (!res.ok) return;
         const data = await res.json();
         state.heyreachAccounts = data.accounts || [];
@@ -842,7 +839,7 @@
 
     async function loadEvents({ background = false } = {}) {
       const channel = state.channel || "heyreach";
-      const res = await fetch(`/api/events?limit=200&channel=${encodeURIComponent(channel)}`, { cache: "no-store" });
+      const res = await fetch(`/api/dashboard/events?limit=200&channel=${encodeURIComponent(channel)}`, { cache: "no-store" });
       const data = await res.json();
       state.events = data.events || [];
       const newSig = eventsSignature(state.events);
@@ -1219,7 +1216,7 @@
       btn.disabled = true;
       btn.textContent = "Regenerating…";
       try {
-        const res = await fetch(`/api/regenerate-draft?id=${encodeURIComponent(id)}`, {
+        const res = await fetch(`/api/dashboard/regenerate-draft?id=${encodeURIComponent(id)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId }),
@@ -1247,7 +1244,7 @@
 
     async function saveDraft(id) {
       const reply = document.getElementById("replyText").value;
-      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/dashboard/events?id=${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ draftReply: reply }),
@@ -1257,7 +1254,7 @@
     }
 
     async function dismissEvent(id) {
-      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/dashboard/events?id=${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "dismissed" }),
@@ -1326,7 +1323,7 @@
       btn.disabled = true;
       btn.textContent = "Clearing…";
       try {
-        const res = await fetch("/api/events?all=1", { method: "DELETE" });
+        const res = await fetch("/api/dashboard/events?all=1", { method: "DELETE" });
         const data = await res.json();
         if (!res.ok) {
           toast(data.error || "Failed to clear");
@@ -1348,7 +1345,7 @@
     // ── Projects ──────────────────────────────────────────────────
 
     async function loadProjects() {
-      const res = await fetch("/api/projects");
+      const res = await fetch("/api/dashboard/projects");
       const data = await res.json();
       state.projects = data.projects || [];
       renderProjectList();
@@ -1388,7 +1385,7 @@
       list.querySelectorAll(".del-project").forEach((btn) => {
         btn.addEventListener("click", async () => {
           if (!confirm("Delete this project? Documents assigned to it will become global.")) return;
-          const res = await fetch(`/api/projects?id=${encodeURIComponent(btn.dataset.delId)}`, { method: "DELETE" });
+          const res = await fetch(`/api/dashboard/projects?id=${encodeURIComponent(btn.dataset.delId)}`, { method: "DELETE" });
           if (res.ok) {
             const d = await res.json();
             const moved = Number(d.reassignedDocuments || 0);
@@ -1462,7 +1459,7 @@
       btn.disabled = true;
       btn.textContent = pendingFiles.length ? "Saving & uploading…" : "Saving…";
 
-      const url = id ? `/api/projects?id=${encodeURIComponent(id)}` : "/api/projects";
+      const url = id ? `/api/dashboard/projects?id=${encodeURIComponent(id)}` : "/api/dashboard/projects";
       const method = id ? "PATCH" : "POST";
 
       try {
@@ -1522,7 +1519,7 @@
     // ── Documents ─────────────────────────────────────────────────
 
     async function loadDocuments() {
-      const res = await fetch("/api/documents");
+      const res = await fetch("/api/dashboard/documents");
       const data = await res.json();
       const filterVal = document.getElementById("docProjectFilter").value;
       const list = document.getElementById("docList");
@@ -1563,7 +1560,7 @@
       list.querySelectorAll(".delete-doc").forEach((btn) => {
         btn.addEventListener("click", async () => {
           if (!confirm("Delete this document?")) return;
-          await fetch(`/api/documents?id=${encodeURIComponent(btn.dataset.docId)}`, { method: "DELETE" });
+          await fetch(`/api/dashboard/documents?id=${encodeURIComponent(btn.dataset.docId)}`, { method: "DELETE" });
           document.getElementById("docPreview").classList.add("hidden");
           await loadDocuments();
         });
@@ -1571,7 +1568,7 @@
 
       list.querySelectorAll(".preview-doc").forEach((btn) => {
         btn.addEventListener("click", async () => {
-          const res = await fetch(`/api/documents?id=${encodeURIComponent(btn.dataset.previewId)}`);
+          const res = await fetch(`/api/dashboard/documents?id=${encodeURIComponent(btn.dataset.previewId)}`);
           const data = await res.json();
           const el = document.getElementById("docPreview");
           if (res.ok) {
@@ -1623,7 +1620,7 @@
           reader.readAsDataURL(file);
         });
 
-        const res = await fetch("/api/documents", {
+        const res = await fetch("/api/dashboard/documents", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1659,7 +1656,7 @@
       ev.preventDefault();
       const title = document.getElementById("docTitlePaste").value;
       const content = document.getElementById("docContent").value;
-      const res = await fetch("/api/documents", {
+      const res = await fetch("/api/dashboard/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1711,7 +1708,7 @@
       const list = document.getElementById("rawList");
       list.innerHTML = `<p class="text-slate-400 p-4 text-center">Loading…</p>`;
       try {
-        const res = await fetch("/api/raw-webhooks?limit=100", { cache: "no-store" });
+        const res = await fetch("/api/dashboard/raw-webhooks?limit=100", { cache: "no-store" });
         if (!res.ok) {
           list.innerHTML = `<p class="text-rose-600 p-4 text-center">Failed to load webhooks</p>`;
           return;
@@ -1754,7 +1751,7 @@
       list.classList.add("hidden");
       body.textContent = "Loading…";
       try {
-        const res = await fetch(`/api/raw-webhooks?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+        const res = await fetch(`/api/dashboard/raw-webhooks?id=${encodeURIComponent(id)}`, { cache: "no-store" });
         if (!res.ok) {
           body.textContent = "Failed to load payload.";
           return;

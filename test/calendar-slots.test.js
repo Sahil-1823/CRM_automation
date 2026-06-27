@@ -5,8 +5,8 @@ import {
   slotOverlapsBusy,
   slotFitsRequest,
   formatSlotLabel,
-} from "../lib/calendar/slots.js";
-import { extractMeetLink } from "../lib/calendar/google.js";
+  extractMeetLink,
+} from "../lib/scheduling/slots.js";
 
 describe("calendar slots", () => {
   it("detects overlap with busy periods", () => {

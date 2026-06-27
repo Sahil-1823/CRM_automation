@@ -11,7 +11,7 @@ import {
   syncAllLeadConversationEvents,
   appendOurMessage,
   buildEnsuredConversationEvent,
-} from "../lib/conversation.js";
+} from "../lib/conversation/index.js";
 
 test("enrichDisplayThread builds two-sided chat from sparse webhook data", () => {
   const thread = enrichDisplayThread({

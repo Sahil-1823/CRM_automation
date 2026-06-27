@@ -1,6 +1,6 @@
-import { readJsonBody, jsonResponse } from "../../http.js";
-import { getGmailConfig } from "../../gmail/config.js";
-import { processGmailNotification } from "../../gmail/process.js";
+import { readJsonBody, jsonResponse } from "../../lib/http.js";
+import { getGmailConfig } from "../../lib/gmail/config.js";
+import { processGmailNotification } from "../../lib/gmail/process.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

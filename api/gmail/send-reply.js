@@ -1,7 +1,7 @@
-import { jsonResponse, readJsonBody } from "../../http.js";
-import { getEvent, serializeEvent } from "../../store.js";
-import { requireAuth } from "../../auth.js";
-import { deliverGmailReply } from "../../gmail/deliver.js";
+import { jsonResponse, readJsonBody } from "../../lib/http.js";
+import { getEvent, serializeEvent } from "../../lib/store.js";
+import { requireAuth } from "../../lib/auth.js";
+import { deliverGmailReply } from "../../lib/gmail/deliver.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

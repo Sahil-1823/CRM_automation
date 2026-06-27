@@ -1,22 +1,22 @@
-import { jsonResponse, readJsonBody } from "../http.js";
+import { jsonResponse, readJsonBody } from "../lib/http.js";
 import {
   getEvent,
   updateEvent,
   findAllEventsByConversationId,
   serializeEvent,
-} from "../store.js";
-import { sendHeyReachMessage } from "../heyreach.js";
-import { requireAuth } from "../auth.js";
+} from "../lib/store.js";
+import { sendHeyReachMessage } from "../lib/heyreach/client.js";
+import { requireAuth } from "../lib/auth.js";
 import {
   enrichDisplayThread,
   appendOurMessage,
   syncAllLeadConversationEvents,
-} from "../conversation.js";
-import { invalidateChatroomCache } from "../conversation-sync.js";
+} from "../lib/conversation/index.js";
+import { invalidateChatroomCache } from "../lib/conversation/sync.js";
 // Google Calendar booking disabled — use SCHEDULING_MODE=calendly (default).
-// import { createCalendarEvent } from "../calendar/google.js";
-// import { isGoogleCalendarConnected } from "../calendar/store.js";
-// import { isGoogleCalendarSchedulingMode } from "../scheduling/config.js";
+// import { createCalendarEvent } from "../lib/calendar/google.js";
+// import { isGoogleCalendarConnected } from "../lib/calendar/store.js";
+// import { isGoogleCalendarSchedulingMode } from "../lib/scheduling/config.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {

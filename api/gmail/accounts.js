@@ -1,10 +1,10 @@
-import { jsonResponse, readJsonBody } from "../../http.js";
-import { requireAuth } from "../../auth.js";
+import { jsonResponse, readJsonBody } from "../../lib/http.js";
+import { requireAuth } from "../../lib/auth.js";
 import {
   listGmailAccounts,
   getGmailAccount,
   saveGmailAccount,
-} from "../../gmail/store.js";
+} from "../../lib/gmail/store.js";
 
 export default async function handler(req, res) {
   try {
