@@ -4,6 +4,7 @@ const HANDLERS = {
   events: () => import("../../lib/dashboard/events.js"),
   projects: () => import("../../lib/dashboard/projects.js"),
   documents: () => import("../../lib/dashboard/documents.js"),
+  analytics: () => import("../../lib/dashboard/analytics.js"),
   "regenerate-draft": () => import("../../lib/dashboard/regenerate-draft.js"),
   "raw-webhooks": () => import("../../lib/dashboard/raw-webhooks.js"),
   "sync-conversation": () => import("../../lib/dashboard/sync-conversation.js"),

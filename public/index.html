@@ -37,6 +37,7 @@
           <button id="tabGmail" type="button" class="channel-tab px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Gmail</button>
         </div>
         <button id="logoutBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Sign out</button>
+        <button id="analyticsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600">Analytics</button>
         <button id="rawBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600" title="Inspect raw HeyReach webhooks">Webhooks</button>
         <button id="docsBtn" class="text-sm px-3 py-1.5 rounded-md border border-slate-200 hover:bg-slate-100">Knowledge</button>
         <button id="clearBtn" class="text-sm px-3 py-1.5 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50">Clear</button>
@@ -188,6 +189,21 @@
 
   <div id="toast" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50"></div>
 
+  <div id="analyticsModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div>
+          <h2 class="text-sm font-medium">Automation analytics</h2>
+          <p id="analyticsNote" class="text-[11px] text-slate-500 mt-0.5">Loading…</p>
+        </div>
+        <button id="closeAnalyticsBtn" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+      </div>
+      <div id="analyticsBody" class="p-5 overflow-y-auto scrollbar flex-1">
+        <p class="text-slate-400 text-sm">Loading analytics…</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Raw webhooks debug modal -->
   <div id="rawModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
@@ -223,7 +239,11 @@
       _eventsSig: "",
       _threadSig: "",
       _accountFilterSig: "",
+      _lastHeyReachMetaAt: 0,
     };
+
+    const EVENTS_REFRESH_MS = 2 * 60 * 1000;
+    const HEYREACH_META_REFRESH_MS = 5 * 60 * 1000;
 
     const tagClass = "text-[11px] px-2 py-0.5 rounded border border-slate-200 text-slate-600 bg-white";
 
@@ -352,6 +372,93 @@
         minute: "2-digit",
       });
     };
+
+    function gmailWatchStatus(account) {
+      const watchExpiration = Number(account?.watchExpiration || 0);
+      if (!watchExpiration) {
+        return { label: "Watch not active", tone: "text-amber-700" };
+      }
+      if (watchExpiration <= Date.now()) {
+        return { label: "Watch expired", tone: "text-rose-700" };
+      }
+      return {
+        label: `Watching until ${fmtDateTime(new Date(watchExpiration).toISOString())}`,
+        tone: "text-emerald-700",
+      };
+    }
+
+    function renderAnalyticsList(items, emptyLabel = "No data yet.") {
+      if (!items?.length) {
+        return `<p class="text-xs text-slate-400">${escapeHtml(emptyLabel)}</p>`;
+      }
+      return `
+        <div class="space-y-2">
+          ${items.map((item) => `
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="text-slate-600 truncate">${escapeHtml(item.name)}</span>
+              <span class="font-medium text-slate-900">${escapeHtml(item.count)}</span>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderAnalytics(data) {
+      const totals = data?.totals || {};
+      const breakdowns = data?.breakdowns || {};
+      document.getElementById("analyticsNote").textContent = data?.note || "Analytics summary";
+      document.getElementById("analyticsBody").innerHTML = `
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Tracked events</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.trackedEvents || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Tracked HeyReach leads</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.trackedHeyReachLeads || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Tracked Gmail threads</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.trackedGmailThreads || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Pending review</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.pendingReview || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Needs human</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.needsHuman || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Auto-resolved</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.autoResolved || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Sent replies</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.sentReplies || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">HeyReach sent replies</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.sentHeyReachReplies || 0)}</div></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-xs text-slate-500">Gmail sent replies</div><div class="text-2xl font-semibold mt-1">${escapeHtml(totals.sentGmailReplies || 0)}</div></div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
+          <div class="border border-slate-200 rounded-xl p-4">
+            <h3 class="text-sm font-medium mb-3">By status</h3>
+            ${renderAnalyticsList(breakdowns.byStatus, "No status data yet.")}
+          </div>
+          <div class="border border-slate-200 rounded-xl p-4">
+            <h3 class="text-sm font-medium mb-3">By channel</h3>
+            ${renderAnalyticsList(breakdowns.byChannel, "No channel data yet.")}
+          </div>
+          <div class="border border-slate-200 rounded-xl p-4">
+            <h3 class="text-sm font-medium mb-3">Top campaigns</h3>
+            ${renderAnalyticsList(breakdowns.topCampaigns, "No campaign data yet.")}
+          </div>
+          <div class="border border-slate-200 rounded-xl p-4">
+            <h3 class="text-sm font-medium mb-3">Top LinkedIn accounts</h3>
+            ${renderAnalyticsList(breakdowns.topAccounts, "No LinkedIn account data yet.")}
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadAnalytics() {
+      const note = document.getElementById("analyticsNote");
+      const body = document.getElementById("analyticsBody");
+      note.textContent = "Loading analytics…";
+      body.innerHTML = `<p class="text-slate-400 text-sm">Loading analytics…</p>`;
+      try {
+        const res = await fetch("/api/dashboard/analytics", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) {
+          note.textContent = "Failed to load analytics";
+          body.innerHTML = `<p class="text-rose-600 text-sm">${escapeHtml(data.error || "Failed to load analytics")}</p>`;
+          return;
+        }
+        renderAnalytics(data);
+      } catch (err) {
+        note.textContent = "Failed to load analytics";
+        body.innerHTML = `<p class="text-rose-600 text-sm">${escapeHtml(err.message || "Failed to load analytics")}</p>`;
+      }
+    }
 
     const statusBadge = (status) => {
       const map = {
@@ -825,13 +932,18 @@
       update();
     }
 
-    async function loadHeyReachMeta() {
+    async function loadHeyReachMeta({ force = false } = {}) {
+      if (state.channel !== "heyreach") return;
+      if (!force && state._lastHeyReachMetaAt && (Date.now() - state._lastHeyReachMetaAt) < HEYREACH_META_REFRESH_MS) {
+        return;
+      }
       try {
         const res = await fetch("/api/dashboard/heyreach-meta");
         if (!res.ok) return;
         const data = await res.json();
         state.heyreachAccounts = data.accounts || [];
         state.heyreachCampaigns = data.campaigns || [];
+        state._lastHeyReachMetaAt = Date.now();
       } catch {
         /* non-fatal */
       }
@@ -898,15 +1010,31 @@
         list.innerHTML = "No accounts connected.";
         return;
       }
-      list.innerHTML = state.gmailAccounts.map((a) => `
+      list.innerHTML = state.gmailAccounts.map((a) => {
+        const watch = gmailWatchStatus(a);
+        const connectedAt = a.connectedAt ? `Connected ${fmtTime(a.connectedAt)}` : "Connected";
+        return `
         <div class="flex items-center justify-between gap-2 py-1 border-b border-slate-100 last:border-0">
-          <span class="truncate">${escapeHtml(a.email)}</span>
-          <label class="flex items-center gap-1 shrink-0">
-            <input type="checkbox" data-gmail-auto="${escapeHtml(a.email)}" ${a.autoSend ? "checked" : ""} />
-            Auto-send
-          </label>
+          <div class="min-w-0">
+            <div class="truncate">${escapeHtml(a.email)}</div>
+            <div class="text-[11px] text-slate-500">
+              ${escapeHtml(connectedAt)}
+              <span class="mx-1">·</span>
+              <span class="${watch.tone}">${escapeHtml(watch.label)}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <label class="flex items-center gap-1">
+              <input type="checkbox" data-gmail-auto="${escapeHtml(a.email)}" ${a.autoSend ? "checked" : ""} />
+              Auto-send
+            </label>
+            <button type="button" data-gmail-disconnect="${escapeHtml(a.email)}" class="text-rose-600 hover:text-rose-700 hover:underline">
+              Disconnect
+            </button>
+          </div>
         </div>
-      `).join("");
+      `;
+      }).join("");
       list.querySelectorAll("input[data-gmail-auto]").forEach((input) => {
         input.addEventListener("change", async () => {
           const email = input.dataset.gmailAuto;
@@ -917,6 +1045,26 @@
           });
           toast(input.checked ? "Auto-send enabled" : "Auto-send disabled");
           await loadGmailAccounts();
+        });
+      });
+      list.querySelectorAll("button[data-gmail-disconnect]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const email = button.dataset.gmailDisconnect;
+          if (!email) return;
+          if (!confirm(`Disconnect Gmail account ${email}?`)) return;
+          try {
+            const res = await fetch(`/api/gmail/oauth?action=disconnect&email=${encodeURIComponent(email)}`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              toast(data.error || "Failed to disconnect Gmail account");
+              return;
+            }
+            toast(`Disconnected ${email}`);
+            await loadGmailAccounts();
+            await loadEvents({ background: false });
+          } catch (err) {
+            toast(err.message || "Failed to disconnect Gmail account");
+          }
         });
       });
     }
@@ -940,8 +1088,12 @@
       renderGmailAccountsPanel();
       document.getElementById("detail").innerHTML =
         '<div class="h-full grid place-items-center text-slate-400 text-sm">Select a conversation to review.</div>';
-      loadEvents();
-      if (channel === "gmail") loadGmailAccounts();
+      if (channel === "heyreach") {
+        loadHeyReachMeta({ force: true }).then(() => loadEvents());
+      } else {
+        loadEvents();
+        loadGmailAccounts();
+      }
     }
 
     function renderSchedulingPanel(scheduling) {
@@ -1804,6 +1956,9 @@
     });
 
     document.getElementById("refreshBtn").addEventListener("click", async () => {
+      if (state.channel === "heyreach") {
+        await loadHeyReachMeta({ force: true });
+      }
       await loadEvents({ background: false });
     });
     document.getElementById("clearBtn").addEventListener("click", clearAllEvents);
@@ -1820,6 +1975,16 @@
     document.getElementById("logoutBtn").addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login.html";
+    });
+    document.getElementById("analyticsBtn").addEventListener("click", () => {
+      document.getElementById("analyticsModal").classList.remove("hidden");
+      loadAnalytics();
+    });
+    document.getElementById("closeAnalyticsBtn").addEventListener("click", () => {
+      document.getElementById("analyticsModal").classList.add("hidden");
+    });
+    document.getElementById("analyticsModal").addEventListener("click", (ev) => {
+      if (ev.target.id === "analyticsModal") document.getElementById("analyticsModal").classList.add("hidden");
     });
 
     document.getElementById("tabHeyreach").addEventListener("click", () => setChannel("heyreach"));
@@ -1840,14 +2005,15 @@
       window.history.replaceState({}, "", window.location.pathname);
     }
 
-    loadHeyReachMeta().then(() => loadEvents());
+    loadHeyReachMeta({ force: true }).then(() => loadEvents());
     loadProjects();
     updateMobilePanels();
     window.addEventListener("resize", updateMobilePanels);
 
     setInterval(() => {
+      if (document.hidden) return;
       loadHeyReachMeta().then(() => loadEvents({ background: true }));
-    }, 30000);
+    }, EVENTS_REFRESH_MS);
   </script>
 </body>
 </html>
