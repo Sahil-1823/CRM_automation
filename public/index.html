@@ -631,8 +631,20 @@
           projectId,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || `Failed to upload ${file.name}`);
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = {};
+      }
+      if (!res.ok) {
+        const fallback =
+          raw && !raw.trim().startsWith("<")
+            ? raw.trim().slice(0, 200)
+            : `Failed to upload ${file.name}`;
+        throw new Error(data.message || data.error || fallback);
+      }
       return data;
     }
 
