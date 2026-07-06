@@ -648,6 +648,17 @@
       return data;
     }
 
+    async function readJsonSafe(res) {
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = {};
+      }
+      return { raw, data };
+    }
+
     async function uploadFilesToProject(files, projectId) {
       let uploaded = 0;
       for (const file of files) {
@@ -1794,7 +1805,7 @@
             projectId: document.getElementById("docProjectUpload").value || "global",
           }),
         });
-        const data = await res.json();
+        const { raw, data } = await readJsonSafe(res);
         if (res.ok) {
           toast(`Uploaded as Markdown (${data.document?.chunkCount} chunks)`);
           document.getElementById("docUploadForm").reset();
@@ -1806,7 +1817,11 @@
           }
           await loadDocuments();
         } else {
-          toast(data.message || "Upload failed");
+          const fallback =
+            raw && !raw.trim().startsWith("<")
+              ? raw.trim().slice(0, 200)
+              : "Upload failed";
+          toast(data.message || data.error || fallback);
         }
       } catch (err) {
         toast(err.message || "Upload failed");
@@ -1829,13 +1844,17 @@
           projectId: document.getElementById("docProjectPaste").value || "global",
         }),
       });
-      const data = await res.json();
+      const { raw, data } = await readJsonSafe(res);
       if (res.ok) {
         toast("Document added as Markdown");
         document.getElementById("docPasteForm").reset();
         await loadDocuments();
       } else {
-        toast(data.message || "Failed to add document");
+        const fallback =
+          raw && !raw.trim().startsWith("<")
+            ? raw.trim().slice(0, 200)
+            : "Failed to add document";
+        toast(data.message || data.error || fallback);
       }
     });
 
