@@ -244,6 +244,8 @@
 
     const EVENTS_REFRESH_MS = 2 * 60 * 1000;
     const HEYREACH_META_REFRESH_MS = 5 * 60 * 1000;
+    const MAX_DOCUMENT_UPLOAD_BYTES = 3 * 1024 * 1024;
+    const MAX_DOCUMENT_UPLOAD_LABEL = "3 MB";
 
     const tagClass = "text-[11px] px-2 py-0.5 rounded border border-slate-200 text-slate-600 bg-white";
 
@@ -618,8 +620,8 @@
     }
 
     async function uploadFileToProject(file, projectId) {
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error(`${file.name}: max file size is 5 MB`);
+      if (file.size > MAX_DOCUMENT_UPLOAD_BYTES) {
+        throw new Error(`${file.name}: max file size is ${MAX_DOCUMENT_UPLOAD_LABEL}`);
       }
       const base64 = await fileToBase64(file);
       const res = await fetch("/api/dashboard/documents", {
@@ -1781,7 +1783,7 @@
       ev.preventDefault();
       const file = document.getElementById("docFile").files?.[0];
       if (!file) { toast("Choose a file first"); return; }
-      if (file.size > 5 * 1024 * 1024) { toast("Max file size is 5 MB"); return; }
+      if (file.size > MAX_DOCUMENT_UPLOAD_BYTES) { toast(`Max file size is ${MAX_DOCUMENT_UPLOAD_LABEL}`); return; }
 
       const btn = document.getElementById("uploadBtn");
       btn.disabled = true;
