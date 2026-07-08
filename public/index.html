@@ -1037,22 +1037,24 @@
       if (!show) return;
 
       const current = state.heyreachWorkspaceFilter;
-      select.innerHTML = [
+      const options = [
         `<option value="">All workspaces</option>`,
         ...state.heyreachWorkspaces.map(
           (w) =>
             `<option value="${escapeHtml(w.id)}" ${w.id === current ? "selected" : ""}>${escapeHtml(w.label || w.id)}${w.isSynthetic ? " (env)" : ""}</option>`,
         ),
-      ].join("");
+      ];
+      select.innerHTML = options.join("");
 
       const projectSelect = document.getElementById("heyreachAccountProject");
       if (projectSelect) {
-        projectSelect.innerHTML = [
+        const projectOptions = [
           `<option value="">Auto-select project (LLM)</option>`,
           ...state.projects.map(
             (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`,
           ),
-        ].join("");
+        ];
+        projectSelect.innerHTML = projectOptions.join("");
       }
     }
 
