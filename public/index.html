@@ -271,6 +271,7 @@
       _eventsSig: "",
       _threadSig: "",
       _accountFilterSig: "",
+      _campaignFilterSig: "",
       _lastHeyReachMetaAt: 0,
     };
 
@@ -1005,7 +1006,17 @@
         const ws = state.heyreachWorkspaceFilter;
         const qs = ws ? `?heyreachAccountId=${encodeURIComponent(ws)}` : "";
         const res = await fetch(`/api/dashboard/heyreach-meta${qs}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          toast(data.error || "Failed to load LinkedIn/campaign filters");
+          state.heyreachAccounts = [];
+          state.heyreachCampaigns = [];
+          state._accountFilterSig = "";
+          state._campaignFilterSig = "";
+          populateAccountFilter();
+          populateCampaignFilter();
+          return;
+        }
         const data = await res.json();
         state.heyreachAccounts = data.accounts || [];
         state.heyreachCampaigns = data.campaigns || [];
@@ -1334,7 +1345,7 @@
         if (id != null) idSet.add(id);
       }
       const ids = [...idSet].sort((a, b) => a - b);
-      const sig = ids.join(",");
+      const sig = `${state.heyreachWorkspaceFilter || "all"}|${ids.join(",")}`;
       if (sig === state._accountFilterSig) return;
       state._accountFilterSig = sig;
 
@@ -1357,6 +1368,10 @@
           label: c.name,
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
+
+      const sig = `${state.heyreachWorkspaceFilter || "all"}|${entries.map((e) => e.key).join(",")}`;
+      if (sig === state._campaignFilterSig) return;
+      state._campaignFilterSig = sig;
 
       select.innerHTML =
         `<option value="">All campaigns</option>` +
@@ -2220,6 +2235,8 @@
       state.selectedId = null;
       state.accountFilter = "";
       state.campaignFilter = "";
+      state._accountFilterSig = "";
+      state._campaignFilterSig = "";
       state._lastHeyReachMetaAt = 0;
       document.getElementById("detail").innerHTML =
         '<div class="h-full grid place-items-center text-slate-400 text-sm">Select a conversation to review.</div>';
