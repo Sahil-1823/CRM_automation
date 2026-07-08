@@ -55,6 +55,36 @@
           <button data-filter="auto_resolved" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Auto-resolved</button>
           <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Dismissed</button>
         </div>
+        <div id="heyreachWorkspaceBar" class="px-4 py-3 border-b border-slate-200 text-xs space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <label for="heyreachWorkspaceFilter" class="font-medium text-slate-700">HeyReach workspace</label>
+            <button id="heyreachManageBtn" type="button" class="px-2 py-1 rounded-md border border-slate-200 hover:bg-slate-50">Manage</button>
+          </div>
+          <select id="heyreachWorkspaceFilter" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <option value="">All workspaces</option>
+          </select>
+        </div>
+        <div id="heyreachAccountsPanel" class="hidden px-4 py-3 border-b border-slate-200 text-xs space-y-3">
+          <div class="font-medium text-slate-700">Manage HeyReach workspaces</div>
+          <p class="text-[11px] text-slate-500">Each workspace has its own API key, webhook URL, and dedicated project context.</p>
+          <form id="heyreachAccountForm" class="space-y-2 border border-slate-200 rounded-lg p-3 bg-slate-50">
+            <input type="hidden" id="heyreachEditId" value="" />
+            <input id="heyreachAccountLabel" type="text" placeholder="Workspace label *" required
+              class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+            <input id="heyreachAccountApiKey" type="password" placeholder="HeyReach API key *"
+              class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+            <select id="heyreachAccountProject" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+              <option value="">Auto-select project (LLM)</option>
+            </select>
+            <input id="heyreachAccountCalendly" type="url" placeholder="Calendly link (optional)"
+              class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+            <div class="flex gap-2">
+              <button type="submit" id="heyreachAccountSaveBtn" class="px-2 py-1 rounded-md border border-slate-900 bg-slate-900 text-white">Save workspace</button>
+              <button type="button" id="heyreachAccountCancelBtn" class="px-2 py-1 rounded-md border border-slate-200 hover:bg-slate-50 hidden">Cancel</button>
+            </div>
+          </form>
+          <div id="heyreachAccountsList" class="text-slate-600 space-y-2">No workspaces configured.</div>
+        </div>
         <div id="gmailAccountsPanel" class="hidden px-4 py-3 border-b border-slate-200 text-xs space-y-2">
           <div class="flex items-center justify-between gap-2">
             <span class="font-medium text-slate-700">Gmail accounts</span>
@@ -234,6 +264,8 @@
       projects: [],
       heyreachAccounts: [],
       heyreachCampaigns: [],
+      heyreachWorkspaces: [],
+      heyreachWorkspaceFilter: "",
       googleCalendar: { configured: false, connected: false, email: null },
       gmailAccounts: [],
       _eventsSig: "",
@@ -522,6 +554,12 @@
       return `<span class="${tagClass}">${escapeHtml(formatAccountLabel(id, e))}</span>`;
     };
 
+    const workspaceBadge = (e) => {
+      if (e.channel === "gmail" || !e.heyreachAccountLabel) return "";
+      if (state.heyreachWorkspaceFilter) return "";
+      return `<span class="${tagClass}">${escapeHtml(e.heyreachAccountLabel)}</span>`;
+    };
+
     function getEventCampaignKey(e) {
       const id = e.campaign?.id ?? e.lead?.campaignId;
       if (id != null && id !== "") return `id:${Number(id)}`;
@@ -596,6 +634,7 @@
         statusBadge(e.status),
         campaignBadge(e),
         projectBadge(e.project),
+        workspaceBadge(e),
         accountBadge(e),
       ]
         .filter(Boolean)
@@ -963,7 +1002,9 @@
         return;
       }
       try {
-        const res = await fetch("/api/dashboard/heyreach-meta");
+        const ws = state.heyreachWorkspaceFilter;
+        const qs = ws ? `?heyreachAccountId=${encodeURIComponent(ws)}` : "";
+        const res = await fetch(`/api/dashboard/heyreach-meta${qs}`);
         if (!res.ok) return;
         const data = await res.json();
         state.heyreachAccounts = data.accounts || [];
@@ -974,9 +1015,146 @@
       }
     }
 
+    async function loadHeyReachWorkspaces() {
+      try {
+        const res = await fetch("/api/dashboard/heyreach-accounts");
+        if (!res.ok) return;
+        const data = await res.json();
+        state.heyreachWorkspaces = data.accounts || [];
+        populateWorkspaceFilter();
+        renderHeyReachWorkspacesPanel();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    function populateWorkspaceFilter() {
+      const select = document.getElementById("heyreachWorkspaceFilter");
+      const bar = document.getElementById("heyreachWorkspaceBar");
+      if (!select || !bar) return;
+      const show = state.channel === "heyreach";
+      bar.classList.toggle("hidden", !show);
+      if (!show) return;
+
+      const current = state.heyreachWorkspaceFilter;
+      select.innerHTML = [
+        `<option value="">All workspaces</option>`,
+        ...state.heyreachWorkspaces.map(
+          (w) =>
+            `<option value="${escapeHtml(w.id)}" ${w.id === current ? "selected" : ""}>${escapeHtml(w.label || w.id)}${w.isSynthetic ? " (env)" : ""}</option>`,
+        ),
+      ].join("");
+
+      const projectSelect = document.getElementById("heyreachAccountProject");
+      if (projectSelect) {
+        projectSelect.innerHTML = [
+          `<option value="">Auto-select project (LLM)</option>`,
+          ...state.projects.map(
+            (p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`,
+          ),
+        ].join("");
+      }
+    }
+
+    function resetHeyReachAccountForm() {
+      document.getElementById("heyreachEditId").value = "";
+      document.getElementById("heyreachAccountLabel").value = "";
+      document.getElementById("heyreachAccountApiKey").value = "";
+      document.getElementById("heyreachAccountApiKey").placeholder = "HeyReach API key *";
+      document.getElementById("heyreachAccountProject").value = "";
+      document.getElementById("heyreachAccountCalendly").value = "";
+      document.getElementById("heyreachAccountSaveBtn").textContent = "Save workspace";
+      document.getElementById("heyreachAccountCancelBtn").classList.add("hidden");
+    }
+
+    function renderHeyReachWorkspacesPanel() {
+      const panel = document.getElementById("heyreachAccountsPanel");
+      const list = document.getElementById("heyreachAccountsList");
+      if (!panel || !list) return;
+      if (state.channel !== "heyreach") {
+        panel.classList.add("hidden");
+        return;
+      }
+
+      if (!state.heyreachWorkspaces.length) {
+        list.innerHTML = "No workspaces configured. Add one below or set HEYREACH_API_KEY in env.";
+        return;
+      }
+
+      list.innerHTML = state.heyreachWorkspaces
+        .map((w) => {
+          const projectName =
+            state.projects.find((p) => p.id === w.projectId)?.name || (w.projectId ? w.projectId : "Auto (LLM)");
+          const webhook = w.webhookUrl
+            ? `<div class="mt-1"><span class="text-slate-500">Webhook:</span> <code class="text-[10px] break-all">${escapeHtml(w.webhookUrl)}</code></div>`
+            : "";
+          const actions = w.isSynthetic
+            ? `<span class="text-slate-400">Env default</span>`
+            : `<button type="button" data-hr-edit="${escapeHtml(w.id)}" class="text-slate-700 hover:underline">Edit</button>
+               <button type="button" data-hr-delete="${escapeHtml(w.id)}" class="text-rose-600 hover:underline">Remove</button>`;
+          return `
+          <div class="border border-slate-200 rounded-lg p-2 bg-white">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="font-medium truncate">${escapeHtml(w.label || w.id)}</div>
+                <div class="text-[11px] text-slate-500">Project: ${escapeHtml(projectName)}</div>
+                ${w.apiKeyPreview ? `<div class="text-[11px] text-slate-500">API key: ${escapeHtml(w.apiKeyPreview)}</div>` : ""}
+                ${webhook}
+              </div>
+              <div class="flex gap-2 shrink-0">${actions}</div>
+            </div>
+          </div>`;
+        })
+        .join("");
+
+      list.querySelectorAll("[data-hr-edit]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.hrEdit;
+          const w = state.heyreachWorkspaces.find((a) => a.id === id);
+          if (!w) return;
+          document.getElementById("heyreachEditId").value = id;
+          document.getElementById("heyreachAccountLabel").value = w.label || id;
+          document.getElementById("heyreachAccountApiKey").value = "";
+          document.getElementById("heyreachAccountApiKey").placeholder = w.hasApiKey ? "Leave blank to keep current API key" : "HeyReach API key *";
+          document.getElementById("heyreachAccountProject").value = w.projectId || "";
+          document.getElementById("heyreachAccountCalendly").value = w.calendlyLink || "";
+          document.getElementById("heyreachAccountSaveBtn").textContent = "Update workspace";
+          document.getElementById("heyreachAccountCancelBtn").classList.remove("hidden");
+          document.getElementById("heyreachAccountsPanel").classList.remove("hidden");
+        });
+      });
+
+      list.querySelectorAll("[data-hr-delete]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.hrDelete;
+          if (!confirm(`Remove workspace "${id}"?`)) return;
+          try {
+            const res = await fetch(`/api/dashboard/heyreach-accounts?id=${encodeURIComponent(id)}`, {
+              method: "DELETE",
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.error || "Failed to remove workspace");
+            }
+            toast("Workspace removed");
+            if (state.heyreachWorkspaceFilter === id) state.heyreachWorkspaceFilter = "";
+            await loadHeyReachWorkspaces();
+            await loadHeyReachMeta({ force: true });
+            await loadEvents({ background: false });
+          } catch (err) {
+            toast(err.message || "Failed to remove workspace");
+          }
+        });
+      });
+    }
+
     async function loadEvents({ background = false } = {}) {
       const channel = state.channel || "heyreach";
-      const res = await fetch(`/api/dashboard/events?limit=200&channel=${encodeURIComponent(channel)}`, { cache: "no-store" });
+      let url = `/api/dashboard/events?limit=200&channel=${encodeURIComponent(channel)}`;
+      if (channel === "heyreach" && state.heyreachWorkspaceFilter) {
+        url += `&heyreachAccountId=${encodeURIComponent(state.heyreachWorkspaceFilter)}`;
+      }
+      const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       state.events = data.events || [];
       const newSig = eventsSignature(state.events);
@@ -1111,10 +1289,17 @@
         channel === "gmail" ? "Gmail auto-reply · review & send" : "HeyReach replies · review & send";
       document.getElementById("chatFilters").classList.toggle("hidden", channel === "gmail");
       renderGmailAccountsPanel();
+      populateWorkspaceFilter();
+      const hrPanel = document.getElementById("heyreachAccountsPanel");
+      if (hrPanel && channel !== "heyreach") hrPanel.classList.add("hidden");
       document.getElementById("detail").innerHTML =
         '<div class="h-full grid place-items-center text-slate-400 text-sm">Select a conversation to review.</div>';
       if (channel === "heyreach") {
-        loadHeyReachMeta({ force: true }).then(() => loadEvents());
+        loadProjects().then(() =>
+          loadHeyReachWorkspaces().then(() =>
+            loadHeyReachMeta({ force: true }).then(() => loadEvents()),
+          ),
+        );
       } else {
         loadEvents();
         loadGmailAccounts();
@@ -1296,6 +1481,7 @@
               ${isGmail && e.gmail?.accountEmail ? `<div><dt class="text-slate-400 inline">Inbox: </dt><dd class="inline">${escapeHtml(e.gmail.accountEmail)}</dd></div>` : ""}
               ${!isGmail && messageTypeLabel ? `<div><dt class="text-slate-400 inline">Type: </dt><dd class="inline">${escapeHtml(messageTypeLabel)}</dd></div>` : ""}
               ${!isGmail && campaignName ? `<div><dt class="text-slate-400 inline">Campaign: </dt><dd class="inline">${escapeHtml(campaignName)}</dd></div>` : ""}
+              ${!isGmail && e.heyreachAccountLabel ? `<div><dt class="text-slate-400 inline">Workspace: </dt><dd class="inline">${escapeHtml(e.heyreachAccountLabel)}</dd></div>` : ""}
               ${!isGmail && accountId != null ? `<div><dt class="text-slate-400 inline">Account: </dt><dd class="inline">${escapeHtml(accountName || formatAccountLabel(accountId, e))}</dd></div>` : ""}
             </dl>
           </div>
@@ -1990,6 +2176,7 @@
 
     document.getElementById("refreshBtn").addEventListener("click", async () => {
       if (state.channel === "heyreach") {
+        await loadHeyReachWorkspaces();
         await loadHeyReachMeta({ force: true });
       }
       await loadEvents({ background: false });
@@ -2026,6 +2213,86 @@
       window.location.href = "/api/gmail/oauth?action=connect";
     });
 
+    document.getElementById("heyreachWorkspaceFilter")?.addEventListener("change", async (ev) => {
+      state.heyreachWorkspaceFilter = ev.target.value || "";
+      state.selectedId = null;
+      state.accountFilter = "";
+      state.campaignFilter = "";
+      state._lastHeyReachMetaAt = 0;
+      document.getElementById("detail").innerHTML =
+        '<div class="h-full grid place-items-center text-slate-400 text-sm">Select a conversation to review.</div>';
+      await loadHeyReachMeta({ force: true });
+      await loadEvents({ background: false });
+    });
+
+    document.getElementById("heyreachManageBtn")?.addEventListener("click", () => {
+      const panel = document.getElementById("heyreachAccountsPanel");
+      if (!panel) return;
+      panel.classList.toggle("hidden");
+      if (!panel.classList.contains("hidden")) {
+        populateWorkspaceFilter();
+        renderHeyReachWorkspacesPanel();
+      }
+    });
+
+    document.getElementById("heyreachAccountCancelBtn")?.addEventListener("click", () => {
+      resetHeyReachAccountForm();
+    });
+
+    document.getElementById("heyreachAccountForm")?.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const editId = document.getElementById("heyreachEditId").value.trim();
+      const label = document.getElementById("heyreachAccountLabel").value.trim();
+      const apiKey = document.getElementById("heyreachAccountApiKey").value.trim();
+      const projectId = document.getElementById("heyreachAccountProject").value || null;
+      const calendlyLink = document.getElementById("heyreachAccountCalendly").value.trim() || null;
+
+      if (!label) {
+        toast("Workspace label is required");
+        return;
+      }
+      if (!editId && !apiKey) {
+        toast("API key is required for new workspaces");
+        return;
+      }
+
+      try {
+        let res;
+        if (editId) {
+          const body = { label, projectId, calendlyLink };
+          if (apiKey) body.apiKey = apiKey;
+          res = await fetch(`/api/dashboard/heyreach-accounts?id=${encodeURIComponent(editId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        } else {
+          res = await fetch("/api/dashboard/heyreach-accounts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ label, apiKey, projectId, calendlyLink }),
+          });
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to save workspace");
+        toast(editId ? "Workspace updated" : "Workspace created");
+        if (data.account?.webhookUrl) {
+          try {
+            await navigator.clipboard.writeText(data.account.webhookUrl);
+            toast("Webhook URL copied to clipboard");
+          } catch {
+            /* ignore */
+          }
+        }
+        resetHeyReachAccountForm();
+        await loadHeyReachWorkspaces();
+        await loadHeyReachMeta({ force: true });
+        await loadEvents({ background: false });
+      } catch (err) {
+        toast(err.message || "Failed to save workspace");
+      }
+    });
+
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("gmail_connected") === "1") {
       toast("Gmail account connected");
@@ -2038,14 +2305,23 @@
       window.history.replaceState({}, "", window.location.pathname);
     }
 
-    loadHeyReachMeta({ force: true }).then(() => loadEvents());
-    loadProjects();
+    loadProjects().then(() =>
+      loadHeyReachWorkspaces().then(() =>
+        loadHeyReachMeta({ force: true }).then(() => loadEvents()),
+      ),
+    );
     updateMobilePanels();
     window.addEventListener("resize", updateMobilePanels);
 
     setInterval(() => {
       if (document.hidden) return;
-      loadHeyReachMeta().then(() => loadEvents({ background: true }));
+      if (state.channel === "heyreach") {
+        loadHeyReachWorkspaces().then(() =>
+          loadHeyReachMeta().then(() => loadEvents({ background: true })),
+        );
+      } else {
+        loadEvents({ background: true });
+      }
     }, EVENTS_REFRESH_MS);
   </script>
 </body>
