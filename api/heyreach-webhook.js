@@ -1,4 +1,4 @@
-import { parseHeyReachPayload, verifyHeyReachSecret } from "../lib/heyreach/client.js";
+import { parseHeyReachPayload } from "../lib/heyreach/client.js";
 import { readJsonBody, jsonResponse } from "../lib/http.js";
 import { classifyReply } from "../lib/sentiment.js";
 import {
@@ -12,7 +12,10 @@ import {
   findAllEventsByConversationId,
   updateEvent,
 } from "../lib/store.js";
-import { getConfig } from "../lib/config.js";
+import {
+  resolveHeyReachWebhookAccount,
+  getHeyReachProjectBinding,
+} from "../lib/heyreach/accounts-store.js";
 import {
   conversationFromEvent,
   mergeWebhookConversation,
@@ -82,12 +85,13 @@ export default async function handler(req, res) {
   const startedAt = Date.now();
 
   try {
-    const config = getConfig();
-
-    if (!verifyHeyReachSecret(req, config.heyreach.webhookSecret)) {
+    const resolved = await resolveHeyReachWebhookAccount(req);
+    if (!resolved.ok) {
       log("warn", "webhook.unauthorized");
-      return jsonResponse(res, 401, { error: "Unauthorized" });
+      return jsonResponse(res, 401, { error: resolved.error || "Unauthorized" });
     }
+    const heyreachAccount = resolved.account;
+    const apiKey = heyreachAccount.apiKey;
 
     const payload = await readJsonBody(req);
     const rawId = await archiveRawWebhook(payload, {
@@ -113,6 +117,7 @@ export default async function handler(req, res) {
       conversationId,
       linkedInAccountId,
       webhookThread: parsed.lead.conversation,
+      apiKey,
     });
 
     const latestInConversation = conversationId
@@ -318,6 +323,8 @@ export default async function handler(req, res) {
           ? await findAllEventsByConversationId(conversationId)
           : [];
         const priorProposedSlots = getPriorProposedSlots(convEvents);
+        const { projectOverride, projectScopeOverride } =
+          await getHeyReachProjectBinding(heyreachAccount);
         const result = await generateDraftForLead({
           lead: leadWithHistory,
           sentiment: triage,
@@ -325,10 +332,17 @@ export default async function handler(req, res) {
           campaignName: leadWithHistory.campaignName || null,
           linkedInUrl: leadWithHistory.linkedInUrl || null,
           conversationId,
+          projectOverride,
+          projectScopeOverride,
+          calendlyLinkOverride: heyreachAccount.calendlyLink || null,
         });
         draft = result.draft;
         draftProjectId = result.draftProjectId;
         project = result.project;
+        if (projectOverride) {
+          project = { id: projectOverride.id, name: projectOverride.name, source: "account" };
+          draftProjectId = projectOverride.id;
+        }
       } catch (err) {
         log("warn", "draft.generation_failed", { conversationId, error: err.message });
         draft = emptyDraft({ error: err.message });
@@ -337,6 +351,8 @@ export default async function handler(req, res) {
 
     const eventPatch = {
       channel: "heyreach",
+      heyreachAccountId: heyreachAccount.id,
+      heyreachAccountLabel: heyreachAccount.label || heyreachAccount.id,
       lead: leadWithHistory,
       linkedInAccount: leadWithHistory.linkedInAccountId
         ? {

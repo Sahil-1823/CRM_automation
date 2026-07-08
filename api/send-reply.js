@@ -6,6 +6,7 @@ import {
   serializeEvent,
 } from "../lib/store.js";
 import { sendHeyReachMessage } from "../lib/heyreach/client.js";
+import { getHeyReachAccount, DEFAULT_ACCOUNT_ID } from "../lib/heyreach/accounts-store.js";
 import { requireAuth } from "../lib/auth.js";
 import {
   enrichDisplayThread,
@@ -55,10 +56,15 @@ export default async function handler(req, res) {
       });
     }
 
+    const accountId = event.heyreachAccountId || DEFAULT_ACCOUNT_ID;
+    const heyreachAccount = await getHeyReachAccount(accountId);
+    const apiKey = heyreachAccount?.apiKey || null;
+
     const heyReachResult = await sendHeyReachMessage({
       conversationId: lead.conversationId,
       linkedInAccountId,
       message: replyText,
+      apiKey,
     });
 
     const sentAt = new Date().toISOString();

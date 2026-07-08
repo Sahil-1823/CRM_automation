@@ -9,6 +9,7 @@ const HANDLERS = {
   "raw-webhooks": () => import("../../lib/dashboard/raw-webhooks.js"),
   "sync-conversation": () => import("../../lib/dashboard/sync-conversation.js"),
   "heyreach-meta": () => import("../../lib/dashboard/heyreach-meta.js"),
+  "heyreach-accounts": () => import("../../lib/dashboard/heyreach-accounts.js"),
 };
 
 export default async function handler(req, res) {
