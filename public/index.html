@@ -46,7 +46,7 @@
     </header>
 
     <div id="appLayout" class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-      <aside id="sidebar" class="w-full md:w-80 border-b md:border-b-0 md:border-r border-slate-200 bg-white flex flex-col min-h-0 md:shrink-0">
+      <aside id="sidebar" class="w-full md:w-64 lg:w-72 border-b md:border-b-0 md:border-r border-slate-200 bg-white flex flex-col min-h-0 md:shrink-0">
         <div class="px-4 py-3 border-b border-slate-200 flex flex-wrap gap-1.5 text-xs">
           <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-md border border-slate-900 bg-slate-900 text-white">All</button>
           <button data-filter="pending_review" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Pending</button>
@@ -791,7 +791,7 @@
         const timeClass = isUs ? "text-slate-400" : "text-slate-400";
         return `
           <div class="flex ${align}">
-            <div class="max-w-[85%]">
+            <div class="max-w-[90%] lg:max-w-[85%]">
               <div class="text-[10px] text-slate-400 mb-1 px-1 ${labelClass} flex items-center gap-2 ${isUs ? "justify-end" : "justify-start"}">
                 <span>${escapeHtml(label)}</span>
                 ${timeLabel ? `<span class="${timeClass}">· ${escapeHtml(timeLabel)}</span>` : ""}
@@ -808,7 +808,7 @@
       }
 
       return `
-        <div id="conversationThread" class="flex flex-col gap-3 h-64 sm:h-80 md:h-96 overflow-y-auto overflow-x-hidden scrollbar border border-slate-100 rounded-lg bg-slate-50/50 p-3">
+        <div id="conversationThread" class="flex flex-col gap-3 min-h-[18rem] h-80 sm:h-96 md:h-[28rem] lg:h-[32rem] overflow-y-auto overflow-x-hidden scrollbar border border-slate-100 rounded-lg bg-slate-50/50 p-3 sm:p-4">
           ${renderThreadMessages(conversation)}
         </div>`;
     }
@@ -1280,7 +1280,7 @@
       ].join("");
 
       document.getElementById("detail").innerHTML = `
-        <div class="max-w-2xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-5${animate ? " fade-in" : ""}">
+        <div class="w-full max-w-5xl mx-auto p-4 sm:p-6 lg:px-8 space-y-4 sm:space-y-5${animate ? " fade-in" : ""}">
           <button id="mobileBackBtn" type="button" class="md:hidden mb-1 text-sm text-slate-600 hover:text-slate-900 flex items-center gap-1">
             ← Back to list
           </button>
