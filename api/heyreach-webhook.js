@@ -49,13 +49,27 @@ async function ensureFirstConversationVisible({
   mergedConversation,
   parsedLead,
   inbound,
+  heyreachAccount,
 }) {
   if (!conversationId || !mergedConversation?.some((m) => m.from === "lead")) {
     return null;
   }
 
   const existing = await findAllEventsByConversationId(conversationId);
-  if (existing.length > 0) return existing[0];
+  if (existing.length > 0) {
+    if (heyreachAccount && existing.some((e) => !e.heyreachAccountId)) {
+      const workspaceTag = {
+        heyreachAccountId: heyreachAccount.id,
+        heyreachAccountLabel: heyreachAccount.label || heyreachAccount.id,
+      };
+      for (const event of existing) {
+        if (!event.heyreachAccountId) {
+          await updateEvent(event.id, workspaceTag);
+        }
+      }
+    }
+    return existing[0];
+  }
 
   if (isAwaitingLeadReply(mergedConversation)) {
     return {
@@ -68,7 +82,15 @@ async function ensureFirstConversationVisible({
   const patch = buildEnsuredConversationEvent({ mergedConversation, parsedLead, inbound });
   if (!patch) return null;
 
-  const record = await saveEvent(patch);
+  const record = await saveEvent({
+    ...patch,
+    ...(heyreachAccount
+      ? {
+          heyreachAccountId: heyreachAccount.id,
+          heyreachAccountLabel: heyreachAccount.label || heyreachAccount.id,
+        }
+      : {}),
+  });
   log("info", "webhook.ensured_visible", {
     conversationId,
     eventId: record.id,
@@ -92,6 +114,10 @@ export default async function handler(req, res) {
     }
     const heyreachAccount = resolved.account;
     const apiKey = heyreachAccount.apiKey;
+    const workspaceTag = {
+      heyreachAccountId: heyreachAccount.id,
+      heyreachAccountLabel: heyreachAccount.label || heyreachAccount.id,
+    };
 
     const payload = await readJsonBody(req);
     const rawId = await archiveRawWebhook(payload, {
@@ -142,6 +168,7 @@ export default async function handler(req, res) {
           parsedLead: parsed.lead,
           findAllEvents: findAllEventsByConversationId,
           updateEvent,
+          workspaceTag,
         })
       : { synced: 0, primaryId: null };
 
@@ -165,6 +192,7 @@ export default async function handler(req, res) {
         mergedConversation,
         parsedLead: parsed.lead,
         inbound,
+        heyreachAccount,
       });
 
       log("info", "webhook.duplicate_delivery", {
@@ -190,6 +218,7 @@ export default async function handler(req, res) {
         mergedConversation,
         parsedLead: parsed.lead,
         inbound,
+        heyreachAccount,
       });
 
       // If we've already replied (in HeyReach or via dashboard) and a pending
@@ -399,6 +428,7 @@ export default async function handler(req, res) {
         parsedLead: parsed.lead,
         findAllEvents: findAllEventsByConversationId,
         updateEvent,
+        workspaceTag,
       });
     }
 
