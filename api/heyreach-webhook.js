@@ -325,6 +325,7 @@ export default async function handler(req, res) {
           campaignName: leadWithHistory.campaignName || null,
           linkedInUrl: leadWithHistory.linkedInUrl || null,
           conversationId,
+          channel: "heyreach",
         });
         draft = result.draft;
         draftProjectId = result.draftProjectId;

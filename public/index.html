@@ -55,6 +55,22 @@
           <button data-filter="auto_resolved" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Auto-resolved</button>
           <button data-filter="dismissed" class="filter-btn px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Dismissed</button>
         </div>
+        <div id="channelProjectPanel" class="px-4 py-3 border-b border-slate-200 text-xs space-y-3">
+          <div class="font-medium text-slate-700">Draft project context</div>
+          <p class="text-[11px] text-slate-500">Used for all new and regenerated drafts on each channel until you change it.</p>
+          <div>
+            <label for="heyreachChannelProject" class="text-[11px] text-slate-500 block mb-1">HeyReach</label>
+            <select id="heyreachChannelProject" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="all">All projects</option>
+            </select>
+          </div>
+          <div>
+            <label for="gmailChannelProject" class="text-[11px] text-slate-500 block mb-1">Gmail</label>
+            <select id="gmailChannelProject" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="all">All projects</option>
+            </select>
+          </div>
+        </div>
         <div id="gmailAccountsPanel" class="hidden px-4 py-3 border-b border-slate-200 text-xs space-y-2">
           <div class="flex items-center justify-between gap-2">
             <span class="font-medium text-slate-700">Gmail accounts</span>
@@ -236,6 +252,7 @@
       heyreachCampaigns: [],
       googleCalendar: { configured: false, connected: false, email: null },
       gmailAccounts: [],
+      channelProjectSettings: { heyreach: { projectId: "all" }, gmail: { projectId: "all" } },
       _eventsSig: "",
       _threadSig: "",
       _accountFilterSig: "",
@@ -1094,6 +1111,68 @@
       });
     }
 
+    function channelProjectLabel(channel) {
+      const id = state.channelProjectSettings[channel]?.projectId || "all";
+      if (id === "none") return "None (no RAG)";
+      if (id === "all") return "All projects";
+      const project = state.projects.find((p) => p.id === id);
+      return project?.name || state.channelProjectSettings[channel]?.projectName || id;
+    }
+
+    function channelProjectOptions(selectedId) {
+      const current = selectedId || "all";
+      return [
+        `<option value="none" ${current === "none" ? "selected" : ""}>None (no RAG context)</option>`,
+        `<option value="all" ${current === "all" ? "selected" : ""}>All projects</option>`,
+        ...state.projects.map(
+          (p) =>
+            `<option value="${escapeHtml(p.id)}" ${current === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`,
+        ),
+      ].join("");
+    }
+
+    async function loadChannelProjectSettings() {
+      try {
+        const res = await fetch("/api/dashboard/channel-settings");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.settings) state.channelProjectSettings = data.settings;
+        populateChannelProjectSelectors();
+      } catch {
+        /* non-fatal */
+      }
+    }
+
+    function populateChannelProjectSelectors() {
+      const heyreachSelect = document.getElementById("heyreachChannelProject");
+      const gmailSelect = document.getElementById("gmailChannelProject");
+      if (!heyreachSelect || !gmailSelect) return;
+      const heyreachId = state.channelProjectSettings.heyreach?.projectId || "all";
+      const gmailId = state.channelProjectSettings.gmail?.projectId || "all";
+      heyreachSelect.innerHTML = channelProjectOptions(heyreachId);
+      gmailSelect.innerHTML = channelProjectOptions(gmailId);
+    }
+
+    async function saveChannelProject(channel, projectId) {
+      try {
+        const res = await fetch("/api/dashboard/channel-settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [channel]: projectId }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast(data.error || "Failed to save channel project");
+          return;
+        }
+        if (data.settings) state.channelProjectSettings = data.settings;
+        populateChannelProjectSelectors();
+        toast(`${channel === "gmail" ? "Gmail" : "HeyReach"} project updated`);
+      } catch (err) {
+        toast(err.message || "Failed to save channel project");
+      }
+    }
+
     function setChannel(channel) {
       state.channel = channel;
       state.selectedId = null;
@@ -1253,7 +1332,8 @@
       const accountId = getEventAccountId(e);
       const accountName = getEventAccountName(e);
       const campaignName = getEventCampaignName(e);
-      const selectedProjectId = e.draftProjectId || e.project?.id || "all";
+      const channelKey = isGmail ? "gmail" : "heyreach";
+      const activeChannelProject = channelProjectLabel(channelKey);
       const messageTypeLabel = formatMessageType(getEventMessageType(e));
       const groundingNote = e.draft?.hasGrounding === false && e.draft?.ragSources?.length
         ? `<p class="text-[11px] text-slate-500 mt-1">AI used general knowledge — retrieved docs were not relevant enough to cite.</p>`
@@ -1269,15 +1349,6 @@
         : e.draft?.skipped && !draftReply
           ? `<p class="text-xs text-slate-500 mb-2">Draft generation is off. Set DRAFT_GENERATION_ENABLED=true to auto-draft on new replies, or use Regenerate draft.</p>`
           : "";
-
-      const projectOptions = [
-        `<option value="none" ${selectedProjectId === "none" ? "selected" : ""}>None (no RAG context)</option>`,
-        `<option value="all" ${selectedProjectId === "all" ? "selected" : ""}>All projects</option>`,
-        ...state.projects.map(
-          (p) =>
-            `<option value="${escapeHtml(p.id)}" ${selectedProjectId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`,
-        ),
-      ].join("");
 
       document.getElementById("detail").innerHTML = `
         <div class="w-full max-w-5xl mx-auto p-4 sm:p-6 lg:px-8 space-y-4 sm:space-y-5${animate ? " fade-in" : ""}">
@@ -1318,13 +1389,11 @@
           </div>
 
           <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
-            <div class="flex flex-wrap items-end justify-between gap-3">
-              <div class="min-w-[200px] flex-1">
-                <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Project context</label>
-                <select id="chatProjectSelect" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" ${isPending ? "" : "disabled"}>
-                  ${projectOptions}
-                </select>
-                <p class="text-[11px] text-slate-400 mt-1">None skips knowledge-base context. All projects searches every document.</p>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Project context</h3>
+                <p class="text-sm text-slate-700 mt-1">${escapeHtml(activeChannelProject)}</p>
+                <p class="text-[11px] text-slate-400 mt-1">Change in the sidebar under <span class="font-medium">Draft project context</span> for ${isGmail ? "Gmail" : "HeyReach"}.</p>
               </div>
               ${isPending ? `<button id="regenerateBtn" class="text-sm px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 shrink-0">Regenerate draft</button>` : ""}
             </div>
@@ -1388,7 +1457,6 @@
     }
 
     async function regenerateDraft(id) {
-      const projectId = document.getElementById("chatProjectSelect").value || "all";
       const btn = document.getElementById("regenerateBtn");
       btn.disabled = true;
       btn.textContent = "Regenerating…";
@@ -1396,17 +1464,11 @@
         const res = await fetch(`/api/dashboard/regenerate-draft?id=${encodeURIComponent(id)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId }),
+          body: JSON.stringify({}),
         });
         const data = await res.json();
         if (res.ok) {
-          const toastMsg =
-            projectId === "none"
-              ? "Draft regenerated (no RAG context)"
-              : projectId === "all"
-                ? "Draft regenerated (all projects)"
-                : "Draft regenerated for selected project";
-          toast(toastMsg);
+          toast("Draft regenerated using channel project setting");
           await loadEvents();
         } else {
           toast(data.message || data.error || "Regenerate failed");
@@ -1527,6 +1589,7 @@
       state.projects = data.projects || [];
       renderProjectList();
       populateProjectSelectors();
+      populateChannelProjectSelectors();
     }
 
     function renderProjectList() {
@@ -2026,6 +2089,13 @@
       window.location.href = "/api/gmail/oauth?action=connect";
     });
 
+    document.getElementById("heyreachChannelProject")?.addEventListener("change", (ev) => {
+      saveChannelProject("heyreach", ev.target.value);
+    });
+    document.getElementById("gmailChannelProject")?.addEventListener("change", (ev) => {
+      saveChannelProject("gmail", ev.target.value);
+    });
+
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("gmail_connected") === "1") {
       toast("Gmail account connected");
@@ -2038,6 +2108,7 @@
       window.history.replaceState({}, "", window.location.pathname);
     }
 
+    loadChannelProjectSettings();
     loadHeyReachMeta({ force: true }).then(() => loadEvents());
     loadProjects();
     updateMobilePanels();
