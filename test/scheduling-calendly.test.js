@@ -70,9 +70,20 @@ describe("scheduling calendly mode", () => {
       agentTrace: [],
       draftProjectId: "all",
       project: { id: null, name: "All projects", source: "auto" },
-    });
+    }, { channel: "gmail" });
     assert.match(out.draft.reply, /calendly\.com/);
     assert.equal(out.draft.scheduling.mode, "calendly");
+  });
+
+  it("finalizeAgentDraftResult does not append calendly for heyreach", () => {
+    const out = finalizeAgentDraftResult({
+      draft: { reply: "Happy to chat", rationale: "", ragSources: [], citedSources: [], hasGrounding: false },
+      scheduling: buildCalendlyScheduling(TEST_LINK),
+      agentTrace: [],
+      draftProjectId: "all",
+      project: { id: null, name: "All projects", source: "auto" },
+    }, { channel: "heyreach" });
+    assert.doesNotMatch(out.draft.reply, /calendly\.com/);
   });
 
   it("agent runner does not reference calendar tools in calendly mode", async () => {
