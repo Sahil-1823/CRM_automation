@@ -1306,6 +1306,18 @@
         (a, b) => new Date(eventActivityAt(b) || 0) - new Date(eventActivityAt(a) || 0),
       );
 
+      // Deduplicate by conversationId: keep only the newest event per conversation.
+      // A lead's follow-up reply creates a new pending_review event; the old sent
+      // event for the same thread should be collapsed so it doesn't appear twice.
+      const seenConv = new Set();
+      filtered = filtered.filter((e) => {
+        const convId = e.lead?.conversationId;
+        if (!convId) return true; // no conversationId — always show
+        if (seenConv.has(convId)) return false;
+        seenConv.add(convId);
+        return true;
+      });
+
       list.innerHTML = filtered.map((e) => {
         const lead = e.lead || {};
         const selected = e.id === state.selectedId;
