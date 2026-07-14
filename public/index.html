@@ -379,6 +379,18 @@
       return d.toLocaleDateString();
     };
 
+    /** Newest activity for sidebar sort/display (updates over original create time). */
+    function eventActivityAt(e) {
+      return (
+        e?.updatedAt ||
+        e?.conversationSyncedAt ||
+        e?.refreshedAt ||
+        e?.sentAt ||
+        e?.createdAt ||
+        ""
+      );
+    }
+
     const fmtDateTime = (iso) => {
       if (!iso) return "";
       const d = new Date(iso);
@@ -1290,6 +1302,10 @@
         return;
       }
 
+      filtered = [...filtered].sort(
+        (a, b) => new Date(eventActivityAt(b) || 0) - new Date(eventActivityAt(a) || 0),
+      );
+
       list.innerHTML = filtered.map((e) => {
         const lead = e.lead || {};
         const selected = e.id === state.selectedId;
@@ -1301,7 +1317,7 @@
           <button data-id="${e.id}" class="event-item w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${selected ? "bg-slate-100 border-l-2 border-l-slate-900" : ""}">
             <div class="flex justify-between gap-2 mb-1">
               <span class="font-medium text-sm truncate">${escapeHtml(lead.fullName || "Unknown")}</span>
-              <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(e.createdAt)}</span>
+              <span class="text-[11px] text-slate-400 shrink-0">${fmtTime(eventActivityAt(e))}</span>
             </div>
             ${preview ? `<p class="text-xs text-slate-500 truncate mb-1">${escapeHtml(preview)}</p>` : ""}
             <div class="flex flex-wrap gap-1.5 mt-2">${renderEventTags(e)}</div>
