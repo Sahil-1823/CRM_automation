@@ -1423,7 +1423,7 @@
                 <p class="text-sm text-slate-700 mt-1">${escapeHtml(activeChannelProject)}</p>
                 <p class="text-[11px] text-slate-400 mt-1">Change in the sidebar under <span class="font-medium">Draft project context</span> for ${isGmail ? "Gmail" : "HeyReach"}.</p>
               </div>
-              ${isPending ? `<button id="regenerateBtn" class="text-sm px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 shrink-0">Regenerate draft</button>` : ""}
+              <button id="regenerateBtn" class="text-sm px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 shrink-0">Regenerate draft</button>
             </div>
           </div>
 
@@ -1457,8 +1457,8 @@
         document.getElementById("saveBtn").addEventListener("click", () => saveDraft(e.id));
         document.getElementById("sendBtn").addEventListener("click", () => sendReply(e.id));
         document.getElementById("dismissBtn").addEventListener("click", () => dismissEvent(e.id));
-        document.getElementById("regenerateBtn").addEventListener("click", () => regenerateDraft(e.id));
       }
+      document.getElementById("regenerateBtn")?.addEventListener("click", () => regenerateDraft(e.id));
 
       document.getElementById("mobileBackBtn")?.addEventListener("click", () => {
         state.mobileShowDetail = false;
@@ -1486,8 +1486,10 @@
 
     async function regenerateDraft(id) {
       const btn = document.getElementById("regenerateBtn");
-      btn.disabled = true;
-      btn.textContent = "Regenerating…";
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Syncing & regenerating…";
+      }
       try {
         const res = await fetch(`/api/dashboard/regenerate-draft?id=${encodeURIComponent(id)}`, {
           method: "POST",
@@ -1496,16 +1498,30 @@
         });
         const data = await res.json();
         if (res.ok) {
-          toast("Draft regenerated using channel project setting");
-          await loadEvents();
+          toast("Draft regenerated from latest conversation");
+          const updated = data.event;
+          if (updated) {
+            const idx = state.events.findIndex((e) => e.id === id);
+            if (idx >= 0) state.events[idx] = updated;
+            else state.events.unshift(updated);
+            state.selectedId = id;
+            state._eventsSig = eventsSignature(state.events);
+            renderList();
+            renderDetail(updated, { skipSync: true, animate: false });
+          } else {
+            await loadEvents();
+          }
         } else {
           toast(data.message || data.error || "Regenerate failed");
         }
       } catch (err) {
         toast(err.message || "Regenerate failed");
       } finally {
-        btn.disabled = false;
-        btn.textContent = "Regenerate draft";
+        const b = document.getElementById("regenerateBtn");
+        if (b) {
+          b.disabled = false;
+          b.textContent = "Regenerate draft";
+        }
       }
     }
 
