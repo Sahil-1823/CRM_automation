@@ -78,6 +78,25 @@
           </div>
           <div id="gmailAccountsList" class="text-slate-600">No accounts connected.</div>
         </div>
+        <div class="px-3 py-2 border-b border-slate-200">
+          <label for="leadSearch" class="sr-only">Search leads</label>
+          <div class="relative">
+            <input
+              id="leadSearch"
+              type="search"
+              autocomplete="off"
+              placeholder="Search leads…"
+              class="w-full text-xs border border-slate-200 rounded-lg pl-2.5 pr-8 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder:text-slate-400"
+            />
+            <button
+              id="leadSearchClear"
+              type="button"
+              class="hidden absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm leading-none px-1"
+              title="Clear search"
+              aria-label="Clear search"
+            >&times;</button>
+          </div>
+        </div>
         <div id="list" class="flex-1 overflow-y-auto scrollbar max-h-[40vh] md:max-h-none"></div>
       </aside>
 
@@ -247,6 +266,7 @@
       filter: "all",
       accountFilter: "",
       campaignFilter: "",
+      searchQuery: "",
       projects: [],
       heyreachAccounts: [],
       heyreachCampaigns: [],
@@ -1272,6 +1292,28 @@
           .join("");
     }
 
+    function eventMatchesSearch(e, query) {
+      const q = (query || "").trim().toLowerCase();
+      if (!q) return true;
+      const lead = e.lead || {};
+      const haystack = [
+        lead.fullName,
+        lead.companyName,
+        lead.jobTitle,
+        lead.replyMessage,
+        lead.fromEmail,
+        e.gmail?.subject,
+        e.gmail?.snippet,
+        e.gmail?.fromEmail,
+        getEventCampaignName(e),
+        getEventAccountName(e),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    }
+
     function renderList() {
       const list = document.getElementById("list");
       let filtered =
@@ -1293,12 +1335,17 @@
         );
       }
 
+      if (state.searchQuery.trim()) {
+        filtered = filtered.filter((e) => eventMatchesSearch(e, state.searchQuery));
+      }
+
       const filterActive = state.accountFilter || state.campaignFilter;
+      const searchActive = !!state.searchQuery.trim();
       if (!filtered.length) {
-        const hint = filterActive
-          ? " Clear LinkedIn account and Campaign filters above the chat panel."
-          : "";
-        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${filterActive ? " for this filter" : ""}.${hint}</div>`;
+        let hint = "";
+        if (searchActive) hint = " Try a different name, company, or clear search.";
+        else if (filterActive) hint = " Clear LinkedIn account and Campaign filters above the chat panel.";
+        list.innerHTML = `<div class="p-8 text-center text-sm text-slate-400">No conversations${searchActive ? " matching search" : filterActive ? " for this filter" : ""}.${hint}</div>`;
         return;
       }
 
@@ -1498,7 +1545,6 @@
         });
         const data = await res.json();
         if (res.ok) {
-          toast("Draft regenerated from latest conversation");
           const updated = data.event;
           if (updated) {
             const idx = state.events.findIndex((e) => e.id === id);
@@ -1508,8 +1554,14 @@
             state._eventsSig = eventsSignature(state.events);
             renderList();
             renderDetail(updated, { skipSync: true, animate: false });
+            if (updated.status === "pending_review") {
+              toast("Draft ready — Pending (lead spoke last)");
+            } else {
+              toast("Draft updated — not Pending (last message is from us)");
+            }
           } else {
             await loadEvents();
+            toast("Draft regenerated");
           }
         } else {
           toast(data.message || data.error || "Regenerate failed");
@@ -2093,6 +2145,34 @@
         btn.className = "filter-btn px-2.5 py-1 rounded-md border border-slate-900 bg-slate-900 text-white";
         renderList();
       });
+    });
+
+    const leadSearchInput = document.getElementById("leadSearch");
+    const leadSearchClear = document.getElementById("leadSearchClear");
+    let leadSearchTimer = null;
+
+    function updateLeadSearchClear() {
+      if (!leadSearchClear) return;
+      leadSearchClear.classList.toggle("hidden", !state.searchQuery.trim());
+    }
+
+    function applyLeadSearch(value) {
+      state.searchQuery = value || "";
+      updateLeadSearchClear();
+      renderList();
+    }
+
+    leadSearchInput?.addEventListener("input", () => {
+      const value = leadSearchInput.value;
+      clearTimeout(leadSearchTimer);
+      leadSearchTimer = setTimeout(() => applyLeadSearch(value), 200);
+    });
+
+    leadSearchClear?.addEventListener("click", () => {
+      clearTimeout(leadSearchTimer);
+      if (leadSearchInput) leadSearchInput.value = "";
+      applyLeadSearch("");
+      leadSearchInput?.focus();
     });
 
     document.getElementById("refreshBtn").addEventListener("click", async () => {

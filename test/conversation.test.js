@@ -11,6 +11,8 @@ import {
   syncAllLeadConversationEvents,
   appendOurMessage,
   buildEnsuredConversationEvent,
+  resolveStatusFromConversation,
+  isLeadReplyPending,
 } from "../lib/conversation/index.js";
 
 test("enrichDisplayThread builds two-sided chat from sparse webhook data", () => {
@@ -163,6 +165,52 @@ test("buildConversationSyncPatch keeps merged thread when already replied", () =
   assert.equal(patch.lead.conversation.length, 2);
   assert.equal(patch.lead.conversation[1].from, "us");
   assert.equal(patch.sendResult.reply, "Thanks, talk soon.");
+  assert.equal(patch.status, "sent");
+});
+
+test("resolveStatusFromConversation: pending only when lead spoke last", () => {
+  assert.equal(
+    resolveStatusFromConversation([{ from: "lead", text: "Hi" }], "sent"),
+    "pending_review",
+  );
+  assert.equal(
+    resolveStatusFromConversation(
+      [
+        { from: "lead", text: "Hi" },
+        { from: "us", text: "Thanks" },
+      ],
+      "pending_review",
+    ),
+    "sent",
+  );
+  assert.equal(
+    isLeadReplyPending([{ from: "lead", text: "Ping" }]),
+    true,
+  );
+  assert.equal(
+    isLeadReplyPending([
+      { from: "lead", text: "Ping" },
+      { from: "us", text: "Pong" },
+    ]),
+    false,
+  );
+});
+
+test("buildConversationSyncPatch marks pending when lead spoke last", () => {
+  const patch = buildConversationSyncPatch(
+    {
+      id: "evt_1",
+      status: "sent",
+      lead: { replyMessage: "Old", conversation: [] },
+    },
+    [
+      { from: "us", text: "Hello" },
+      { from: "lead", text: "Interested now" },
+    ],
+    {},
+  );
+  assert.equal(patch.status, "pending_review");
+  assert.equal(patch.lead.replyMessage, "Interested now");
 });
 
 test("mergeWebhookConversation keeps prior-only messages and applies HeyReach order", () => {
@@ -221,6 +269,7 @@ test("buildConversationOnlyPatch updates thread without changing reply context",
 
   assert.equal(patch.lead.conversation.length, 3);
   assert.equal(patch.lead.replyMessage, "Old reply");
+  assert.equal(patch.status, "pending_review");
 });
 
 test("syncAllLeadConversationEvents updates every event for a conversation", async () => {
@@ -267,7 +316,7 @@ test("appendOurMessage adds outbound with dashboard_send metadata", () => {
   assert.equal(thread[1].atSource, "dashboard_send");
 });
 
-test("syncAllLeadConversationEvents preserves sent event reply when newest is sent", async () => {
+test("syncAllLeadConversationEvents reopens pending when lead spoke last after send", async () => {
   const updates = [];
   const events = [
     {
@@ -296,8 +345,40 @@ test("syncAllLeadConversationEvents preserves sent event reply when newest is se
   });
 
   assert.equal(updates.length, 1);
-  assert.equal(updates[0].patch.lead.replyMessage, "Interested");
+  assert.equal(updates[0].patch.status, "pending_review");
+  assert.equal(updates[0].patch.lead.replyMessage, "Tuesday works");
   assert.equal(updates[0].patch.lead.conversation.length, 4);
+});
+
+test("syncAllLeadConversationEvents keeps sent when last message is from us", async () => {
+  const updates = [];
+  const events = [
+    {
+      id: "evt_sent",
+      status: "sent",
+      lead: { conversationId: "c1", replyMessage: "Interested" },
+      sendResult: { reply: "Great, let's chat" },
+    },
+  ];
+  const merged = [
+    { from: "us", text: "Hi" },
+    { from: "lead", text: "Interested" },
+    { from: "us", text: "Great, let's chat" },
+  ];
+
+  await syncAllLeadConversationEvents({
+    conversationId: "c1",
+    mergedConversation: merged,
+    parsedLead: { conversationId: "c1" },
+    findAllEvents: async () => events,
+    updateEvent: async (id, patch) => {
+      updates.push({ id, patch });
+      return { id, ...patch };
+    },
+  });
+
+  assert.equal(updates[0].patch.status, "sent");
+  assert.equal(updates[0].patch.lead.replyMessage, "Interested");
 });
 
 test("buildEnsuredConversationEvent creates dismissed record for synced thread", () => {
