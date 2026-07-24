@@ -75,6 +75,31 @@ describe("scheduling calendly mode", () => {
     assert.equal(out.draft.scheduling.mode, "calendly");
   });
 
+  it("finalizeAgentDraftResult does not re-append calendly when already in thread", () => {
+    const conversation = [
+      { from: "us", text: `Book here: ${TEST_LINK}` },
+    ];
+    const out = finalizeAgentDraftResult({
+      draft: { reply: "See you then", rationale: "", ragSources: [], citedSources: [], hasGrounding: false },
+      scheduling: buildCalendlyScheduling(TEST_LINK, { conversation }),
+      agentTrace: [],
+      draftProjectId: "all",
+      project: { id: null, name: "All projects", source: "auto" },
+    }, { channel: "gmail", conversation });
+    assert.equal(out.draft.reply, "See you then");
+  });
+
+  it("buildCalendlyScheduling marks waitingOnLead when last message is from us", () => {
+    const s = buildCalendlyScheduling(TEST_LINK, {
+      conversation: [
+        { from: "lead", text: "Can we meet?" },
+        { from: "us", text: "Sure — Friday works?" },
+      ],
+    });
+    assert.equal(s.waitingOnLead, true);
+    assert.equal(s.appendLink, true);
+  });
+
   it("finalizeAgentDraftResult does not append calendly for heyreach", () => {
     const out = finalizeAgentDraftResult({
       draft: { reply: "Happy to chat", rationale: "", ragSources: [], citedSources: [], hasGrounding: false },

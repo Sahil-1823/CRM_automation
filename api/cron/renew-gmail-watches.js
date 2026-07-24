@@ -2,18 +2,15 @@ import { jsonResponse } from "../../lib/http.js";
 import { listGmailAccounts, getGmailAccount, updateGmailAccount } from "../../lib/gmail/store.js";
 import { watchInbox } from "../../lib/gmail/oauth.js";
 import { getGmailConfig } from "../../lib/gmail/config.js";
+import { authorizeCronRequest } from "../../lib/dashboard/sync-conversations-batch.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return jsonResponse(res, 405, { error: "Method not allowed" });
   }
 
-  const cronSecret = process.env.CRON_SECRET?.trim();
-  if (cronSecret) {
-    const url = new URL(req.url, "http://localhost");
-    if (url.searchParams.get("token") !== cronSecret) {
-      return jsonResponse(res, 401, { error: "Unauthorized" });
-    }
+  if (!authorizeCronRequest(req)) {
+    return jsonResponse(res, 401, { error: "Unauthorized" });
   }
 
   try {
