@@ -84,7 +84,7 @@ export default async function handler(req, res) {
       status: "sent",
       sentAt,
       sendResult: { reply: replyText, sentAt, heyreach: heyReachResult, linkedInAccountId },
-      draft: { ...(event.draft || {}), reply: replyText, scheduling },
+      draft: { ...(event.draft || {}), reply: "", scheduling },
       lead: { ...lead, conversation },
     });
 

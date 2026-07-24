@@ -13,6 +13,9 @@ import {
   buildEnsuredConversationEvent,
   resolveStatusFromConversation,
   isLeadReplyPending,
+  latestThreadMessageAt,
+  eventLastMessageAt,
+  clearDraftReply,
 } from "../lib/conversation/index.js";
 
 test("enrichDisplayThread builds two-sided chat from sparse webhook data", () => {
@@ -153,6 +156,7 @@ test("buildConversationSyncPatch keeps merged thread when already replied", () =
       status: "sent",
       sentAt: "2026-06-10T12:00:00.000Z",
       sendResult: { reply: "Thanks, talk soon." },
+      draft: { reply: "Thanks, talk soon.", rationale: "old" },
       lead: { replyMessage: "Sounds good", conversation: [] },
     },
     [
@@ -166,6 +170,8 @@ test("buildConversationSyncPatch keeps merged thread when already replied", () =
   assert.equal(patch.lead.conversation[1].from, "us");
   assert.equal(patch.sendResult.reply, "Thanks, talk soon.");
   assert.equal(patch.status, "sent");
+  assert.equal(patch.draft.reply, "");
+  assert.equal(patch.draft.rationale, "old");
 });
 
 test("resolveStatusFromConversation: pending only when lead spoke last", () => {
@@ -201,6 +207,7 @@ test("buildConversationSyncPatch marks pending when lead spoke last", () => {
     {
       id: "evt_1",
       status: "sent",
+      draft: { reply: "" },
       lead: { replyMessage: "Old", conversation: [] },
     },
     [
@@ -211,6 +218,52 @@ test("buildConversationSyncPatch marks pending when lead spoke last", () => {
   );
   assert.equal(patch.status, "pending_review");
   assert.equal(patch.lead.replyMessage, "Interested now");
+  assert.equal(patch.draft, undefined);
+});
+
+test("buildConversationOnlyPatch clears draft when last message is from us", () => {
+  const patch = buildConversationOnlyPatch(
+    {
+      id: "evt_old",
+      status: "pending_review",
+      draft: { reply: "Please ignore", ragSources: [{ id: "1" }] },
+      lead: { replyMessage: "Old reply" },
+    },
+    [
+      { from: "lead", text: "Hi", at: "2026-06-10T10:00:00.000Z" },
+      { from: "us", text: "Thanks", at: "2026-06-10T11:00:00.000Z" },
+    ],
+  );
+  assert.equal(patch.status, "sent");
+  assert.equal(patch.draft.reply, "");
+  assert.deepEqual(patch.draft.ragSources, [{ id: "1" }]);
+});
+
+test("latestThreadMessageAt and eventLastMessageAt use message clocks", () => {
+  assert.equal(
+    latestThreadMessageAt([
+      { from: "lead", text: "A", at: "2026-06-10T10:00:00.000Z" },
+      { from: "us", text: "B", at: "2026-06-10T12:00:00.000Z" },
+      { from: "lead", text: "C", at: "2026-06-10T11:00:00.000Z" },
+    ]),
+    "2026-06-10T12:00:00.000Z",
+  );
+  assert.equal(
+    eventLastMessageAt({
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      conversationSyncedAt: "2026-06-20T00:00:00.000Z",
+      lead: {
+        conversation: [
+          { from: "lead", text: "Hi", at: "2026-06-10T09:00:00.000Z" },
+          { from: "us", text: "Hello", at: "2026-06-10T10:00:00.000Z" },
+        ],
+      },
+    }),
+    "2026-06-10T10:00:00.000Z",
+  );
+  assert.equal(clearDraftReply({ reply: "x", rationale: "y" }).reply, "");
+  assert.equal(clearDraftReply({ reply: "x", rationale: "y" }).rationale, "y");
 });
 
 test("mergeWebhookConversation keeps prior-only messages and applies HeyReach order", () => {

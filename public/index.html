@@ -399,16 +399,21 @@
       return d.toLocaleDateString();
     };
 
-    /** Newest activity for sidebar sort/display (updates over original create time). */
+    /** Newest activity for sidebar: last message time (either side), not last sync. */
     function eventActivityAt(e) {
-      return (
-        e?.updatedAt ||
-        e?.conversationSyncedAt ||
-        e?.refreshedAt ||
-        e?.sentAt ||
-        e?.createdAt ||
-        ""
-      );
+      const thread = conversationFromEvent(e);
+      let best = "";
+      let bestMs = -1;
+      for (const m of thread || []) {
+        const at = typeof m?.at === "string" ? m.at.trim() : "";
+        if (!at) continue;
+        const ms = new Date(at).getTime();
+        if (!Number.isNaN(ms) && ms >= bestMs) {
+          bestMs = ms;
+          best = at;
+        }
+      }
+      return best || e?.sentAt || e?.sendResult?.sentAt || e?.createdAt || "";
     }
 
     const fmtDateTime = (iso) => {
@@ -1402,7 +1407,8 @@
       const lead = e.lead || {};
       const isGmail = e.channel === "gmail";
       const isPending = e.status === "pending_review";
-      const draftReply = e.draft?.reply || "";
+      // Draft text only while awaiting our reply; empty after send / when last msg is us.
+      const draftReply = isPending ? (e.draft?.reply || "") : "";
       const sendLabel = isGmail ? "Send via Gmail" : "Send via HeyReach";
       const accountId = getEventAccountId(e);
       const accountName = getEventAccountName(e);
